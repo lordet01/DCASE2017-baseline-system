@@ -1,54 +1,59 @@
-function filewise_SourceSep(path_in, path_denoise)
+function filewise_SourceSep(path_in, path_denoise, event_list, event_target)
 
 addpath('src');
 addpath('settings');
-
 
 [~,ftype] = strtok(path_in, '.');
 
 SED_initial_setting_SNMF;
 
-% if p.sep_MLD == 1
-    load(['basis/event_babycry/event_babycry_Basis_MLD.mat']);
-    B_DFT_e1 = B_DFT_sub; B_Mel_e1 = B_Mel_sub;
-    load(['basis/event_glassbreak/event_glassbreak_Basis_MLD.mat']);
-    B_DFT_e2 = B_DFT_sub; B_Mel_e2 = B_Mel_sub;
-    load(['basis/event_gunshot/event_gunshot_Basis_MLD.mat']);
-    B_DFT_e3 = B_DFT_sub; B_Mel_e3 = B_Mel_sub;
+if p.train_MLD == 1
+    opt_MLD = '_MLD';
+else
+    opt_MLD = [];
+end
+
+%% Load and organize event bases
+K = length(event_list);
+B_DFT_x_buff = zeros(p.F_DFT_order, p.R_x * (K-1));
+B_Mel_x_buff = zeros(p.F_order, p.R_x * (K-1));
+k_idx = 1;
+for k = 1:K
+    name = event_list{k};
+    load(['basis/event_',name,'/event_',name,'_Basis',opt_MLD,'.mat']);
     
-    B_DFT_x = [B_DFT_e1, B_DFT_e2, B_DFT_e3];
-    B_Mel_x = [B_Mel_e1, B_Mel_e2, B_Mel_e3];
-    
-    load(['basis/bgn_DCASE2017/bgn_DCASE2017_Basis_MLD.mat']);
-    B_DFT_d = B_DFT_sub; B_Mel_d = B_Mel_sub;
-    
-% else
-%     load(['basis/event_babycry/event_babycry_Basis.mat']);
-%     B_DFT_e1 = B_DFT_sub; B_Mel_e1 = B_Mel_sub;
-%     load(['basis/event_glassbreak/event_glassbreak_Basis.mat']);
-%     B_DFT_e2 = B_DFT_sub; B_Mel_e2 = B_Mel_sub;
-%     load(['basis/event_gunshot/event_gunshot_Basis.mat']);
-%     B_DFT_e3 = B_DFT_sub; B_Mel_e3 = B_Mel_sub;
-%     
-%     B_DFT_x = [B_DFT_e1, B_DFT_e2, B_DFT_e3];
-%     B_Mel_x = [B_Mel_e1, B_Mel_e2, B_Mel_e3];
-%     
-%     load(['basis/bgn_DCASE2017/bgn_DCASE2017_Basis.mat']);
-%     B_DFT_d = B_DFT_sub; B_Mel_d = B_Mel_sub;
-% end
+    if strcmp(event_target, name)
+        B_DFT_x = B_DFT_sub; B_Mel_x = B_Mel_sub;
+    else
+        B_DFT_x_buff(:, (k_idx-1)*p.R_x + 1 : k_idx*p.R_x) = B_DFT_sub; B_Mel_x_buff(:,(k_idx-1)*p.R_x + 1 : k_idx*p.R_x) = B_Mel_sub;
+        k_idx = k_idx + 1;
+    end
+end
+
+%% Load bgn basis
+load(['basis/bgn_DCASE2017/bgn_DCASE2017_Basis.mat']);
+B_DFT_d = B_DFT_sub; B_Mel_d = B_Mel_sub;
+B_DFT_d = [B_DFT_d, B_DFT_x_buff]; B_Mel_d = [B_Mel_d, B_Mel_x_buff]; %Consider non-target event as noises
+
+% % if p.adapt_train_N == 1
+% %     B_DFT_d = [B_DFT_d(:, 1:p.R_a), B_DFT_d]; %Reserve Noise adaptation field
+% %     B_Mel_d = [B_Mel_d(:, 1:p.R_a), B_Mel_d]; %Reserve Noise adaptation field
+% % end
 
 SED_initial_setting_SNMF;
+% % p.R_x = size(B_DFT_x, 2);
+% % p.R_d = size(B_DFT_d, 2);
 
 %% Clear event-wise buffer
 try
     p = rmfield(p, {'w_update_ind', 'h_update_ind', 'init_w', 'init_h'});
 catch
 end
-p.EVENT_NUM = 3;
-p.EVENT_RANK = [1, 41, 81];
+
+p.EVENT_NUM = 1;
+p.EVENT_RANK = [1];
 p.NOISE_NUM = 1;
 p.NOISE_RANK = [1];
-
 p.R_d = p.R_x;
 if size(B_DFT_d,2) < p.R_d
     R_tmp = p.R_d - size(B_DFT_d,2);
@@ -112,6 +117,7 @@ end
 l = 1;
 cnt_residue = 0;
 s_in_sub = zeros(ch, frame_shift);
+A_traj = 0;
 while (1)
     
     %Check eof
@@ -151,8 +157,7 @@ while (1)
     elseif strcmp(p.NMF_algorithm,'PMWF')
 %         [e_est_frame,n_est_frame, d_frame, g] = bntf_sep_event_RT_PMWF(y, g, p);
     elseif strcmp(p.NMF_algorithm,'SNMF')
-%         [e_est_frame,n_est_frame, d_frame, g] = bnmf_sep_event_RT(y, g, p);
-        [~,~, d_frame, g] = nmf_sep_event_RT_DCASE17(y, l, g, p);
+        [~,~ , d_frame, A_frm, g] = nmf_sep_event_RT_DCASE17(y, l, g, p);
     end
     
     for j =1:ch
@@ -178,8 +183,17 @@ while (1)
             fwrite(fdenoise(j), x_tilde(j,1:frame_shift), 'int16');
         end
     end
+    
+    %Store Activation trajectory
+    if A_traj == 0
+        A_traj = A_frm;
+    else
+        A_traj = [A_traj, A_frm];
+    end
+    
     l = l + 1;
 end
+save([path_denoise(1,:),'.mat'], 'A_traj'); %Store Activation trajectory
 
 fclose('all');
 

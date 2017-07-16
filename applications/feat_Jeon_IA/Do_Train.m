@@ -1,5 +1,7 @@
 % /*********************************************
 % 	Sound Event Detection & Separation Engine
+%    - Basis Trainer (SNMF + MLD)
+%
 % 	Intelligent Acoustics
 %    - Kwang Myung Jeon
 % ***********************************************/

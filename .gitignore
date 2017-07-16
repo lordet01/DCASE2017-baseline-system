@@ -78,3 +78,8 @@ tests/material/saved.txt
 tests/material/saved.yaml
 *.wav
 *.bat
+*.mat
+*.asv
+applications/feat_Jeon_IA/basis_Rx40_Rd100/event_glassbreak/desktop.ini
+*.mat
+*.ini

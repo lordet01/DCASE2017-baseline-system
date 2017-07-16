@@ -17,14 +17,279 @@ import platform
 from dcase_framework.application_core import BinarySoundEventAppCore
 from dcase_framework.parameters import ParameterContainer
 from dcase_framework.utils import *
+from dcase_framework.learners import SceneClassifier
+from dcase_framework.features import FeatureExtractor
+from dcase_framework.datasets import AcousticSceneDataset
+from dcase_framework.metadata import MetaDataContainer, MetaDataItem
 
 __version_info__ = ('1', '0', '0')
 __version__ = '.'.join(__version_info__)
 
 
-class Task2AppCore(BinarySoundEventAppCore):
-    pass
+#class Task2AppCore(BinarySoundEventAppCore):
+#    pass
+class DCASE2013_Scene_EvaluationSet(AcousticSceneDataset):
+    """DCASE 2013 Acoustic scene classification, evaluation dataset
 
+    """
+    def __init__(self, *args, **kwargs):
+        kwargs['storage_name'] = kwargs.get('storage_name', 'DCASE2013-scene-evaluation')
+        super(DCASE2013_Scene_EvaluationSet, self).__init__(*args, **kwargs)
+
+        self.dataset_group = 'acoustic scene'
+        self.dataset_meta = {
+            'authors': 'Dimitrios Giannoulis, Emmanouil Benetos, Dan Stowell, and Mark Plumbley',
+            'name_remote': 'IEEE AASP 2013 CASA Challenge - Private Dataset for Scene Classification Task',
+            'url': 'http://www.elec.qmul.ac.uk/digitalmusic/sceneseventschallenge/',
+            'audio_source': 'Field recording',
+            'audio_type': 'Natural',
+            'recording_device_model': None,
+            'microphone_model': 'Soundman OKM II Klassik/studio A3 electret microphone',
+        }
+
+        self.crossvalidation_folds = 5
+
+        self.package_list = [
+            {
+                'remote_package': 'https://archive.org/download/dcase2013_scene_classification_testset/scenes_stereo_testset.zip',
+                'local_package': os.path.join(self.local_path, 'scenes_stereo_testset.zip'),
+                'local_audio_path': os.path.join(self.local_path),
+            }
+        ]
+
+    def _after_extract(self, to_return=None):
+        if not self.meta_container.exists():
+            meta_data = MetaDataContainer()
+            for file in self.audio_files:
+                meta_data.append(MetaDataItem({
+                    'file': os.path.split(file)[1],
+                    'scene_label': os.path.splitext(os.path.split(file)[1])[0][:-2]
+                }))
+            self.meta_container.update(meta_data)
+            self.meta_container.save()
+
+        all_folds_found = True
+        for fold in range(1, self.crossvalidation_folds):
+            if not os.path.isfile(self._get_evaluation_setup_filename(setup_part='train', fold=fold)):
+                all_folds_found = False
+            if not os.path.isfile(self._get_evaluation_setup_filename(setup_part='test', fold=fold)):
+                all_folds_found = False
+
+        if not all_folds_found:
+            if not os.path.isdir(self.evaluation_setup_path):
+                os.makedirs(self.evaluation_setup_path)
+
+            classes = self.meta.slice_field('scene_label')
+            files = numpy.array(self.meta.slice_field('file'))
+
+            from sklearn.model_selection import StratifiedShuffleSplit
+            sss = StratifiedShuffleSplit(n_splits=self.crossvalidation_folds, test_size=0.3, random_state=0)
+
+            fold = 1
+            for train_index, test_index in sss.split(y=classes, X=classes):
+                MetaDataContainer(self.meta.filter(file_list=list(files[train_index])),
+                                  filename=self._get_evaluation_setup_filename(setup_part='train', fold=fold)).save()
+
+                MetaDataContainer(self.meta.filter(file_list=list(files[test_index])).remove_field('scene_label'),
+                                  filename=self._get_evaluation_setup_filename(setup_part='test', fold=fold)).save()
+
+                MetaDataContainer(self.meta.filter(file_list=list(files[test_index])),
+                                  filename=self._get_evaluation_setup_filename(setup_part='evaluate', fold=fold)).save()
+                fold += 1
+
+
+class CustomFeatureExtractor(FeatureExtractor):
+    def __init__(self, *args, **kwargs):
+        kwargs['valid_extractors'] = [
+            'zero_crossing_rate',
+            'rmse',
+            'centroid',
+        ]
+        kwargs['default_parameters'] = {
+            'zero_crossing_rate': {
+                'mono': True,                       # [true, false]
+                'center': True,
+            },
+            'rmse': {
+                'mono': True,                       # [true, false]
+                'window': 'hamming_asymmetric',     # [hann_asymmetric, hamming_asymmetric]
+                'n_fft': 2048,                      # FFT length
+            },
+            'centroid': {
+                'mono': True,                       # [true, false]
+                'window': 'hamming_asymmetric',     # [hann_asymmetric, hamming_asymmetric]
+                'spectrogram_type': 'magnitude',    # [magnitude, power]
+                'n_fft': 2048,                      # FFT length
+            },
+        }
+
+        super(CustomFeatureExtractor, self).__init__(*args, **kwargs)
+
+    def _zero_crossing_rate(self, data, params):
+        """Zero crossing rate
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Audio data
+        params : dict
+            Parameters
+
+        Returns
+        -------
+
+        """
+
+        import librosa
+
+        feature_matrix = []
+        for channel in range(0, data.shape[0]):
+            zero_crossing_rate = librosa.feature.zero_crossing_rate(y=data[channel, :],
+                                                                    frame_length=params.get('win_length_samples'),
+                                                                    hop_length=params.get('hop_length_samples'),
+                                                                    center=params.get('center')
+                                                                    )
+
+            zero_crossing_rate = zero_crossing_rate.reshape((-1, 1))
+            feature_matrix.append(zero_crossing_rate)
+
+        return feature_matrix
+
+    def _rmse(self, data, params):
+        """Root-mean-square energy
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Audio data
+        params : dict
+            Parameters
+
+        Returns
+        -------
+
+        """
+        import librosa
+
+        window = self._window_function(N=params.get('win_length_samples'),
+                                       window_type=params.get('window'))
+
+        feature_matrix = []
+        for channel in range(0, data.shape[0]):
+            S = librosa.magphase(librosa.stft(y=data[channel, :] + self.eps,
+                                              n_fft=params.get('n_fft'),
+                                              win_length=params.get('win_length_samples'),
+                                              hop_length=params.get('hop_length_samples'),
+                                              center=False,
+                                              window=window)
+                                 )[0]
+            rmse = librosa.feature.rmse(S=S,
+                                        frame_length=params.get('win_length_samples'),
+                                        hop_length=params.get('hop_length_samples')
+                                        )
+            rmse = rmse.reshape((-1, 1))
+            feature_matrix.append(rmse)
+
+        return feature_matrix
+
+    def _centroid(self, data, params):
+        """Centroid
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Audio data
+        params : dict
+            Parameters
+
+        Returns
+        -------
+        list of numpy.ndarrays
+            List of feature matrices, feature matrix per audio channel
+        """
+        import librosa
+
+        window = self._window_function(N=params.get('win_length_samples'),
+                                       window_type=params.get('window'))
+        freq = librosa.core.time_frequency.fft_frequencies(sr=params.get('fs'),
+                                                           n_fft=params.get('n_fft'))
+        freq = freq.reshape((-1, 1))
+
+        feature_matrix = []
+        for channel in range(0, data.shape[0]):
+            spectrogram_ = self._spectrogram(y=data[channel, :],
+                                             n_fft=params.get('n_fft'),
+                                             win_length_samples=params.get('win_length_samples'),
+                                             hop_length_samples=params.get('hop_length_samples'),
+                                             spectrogram_type=params.get('spectrogram_type') if 'spectrogram_type' in params else 'magnitude',
+                                             center=True,
+                                             window=window)
+
+            centroid = numpy.sum(freq * librosa.util.normalize(spectrogram_, norm=1, axis=0), axis=0, keepdims=True)
+            centroid = centroid.reshape((-1, 1))
+            feature_matrix.append(centroid)
+
+        return feature_matrix
+
+
+class SceneClassifierSVM(SceneClassifier):
+    """Scene classifier with SVM"""
+    def __init__(self, *args, **kwargs):
+        super(SceneClassifierSVM, self).__init__(*args, **kwargs)
+        self.method = 'svm'
+
+    def learn(self, data, annotations, data_filenames=None):
+        """Learn based on data ana annotations
+
+        Parameters
+        ----------
+        data : dict of FeatureContainers
+            Feature data
+        annotations : dict of MetadataContainers
+            Meta data
+
+        Returns
+        -------
+        self
+
+        """
+
+        from sklearn.svm import SVC
+
+        training_files = annotations.keys()  # Collect training files
+        activity_matrix_dict = self._get_target_matrix_dict(data, annotations)
+        X_training = numpy.vstack([data[x].feat[0] for x in training_files])
+        Y_training = numpy.vstack([activity_matrix_dict[x] for x in training_files])
+        y = numpy.argmax(Y_training, axis=1)
+
+        self['model'] = SVC(**self.learner_params).fit(X_training, y)
+
+        return self
+
+    def _frame_probabilities(self, feature_data):
+        if hasattr(self['model'], 'predict_log_proba'):
+            return self['model'].predict_log_proba(feature_data).T
+        elif hasattr(self['model'], 'predict_proba'):
+            return self['model'].predict_proba(feature_data).T
+        else:
+            message = '{name}: Train model with probability flag [True].'.format(
+                name=self.__class__.__name__
+            )
+            self.logger.exception(message)
+            raise AssertionError(message)
+
+
+class CustomAppCore(BinarySoundEventAppCore):
+    def __init__(self, *args, **kwargs):
+        #kwargs['Datasets'] = {
+        #    'DCASE2013_Scene_EvaluationSet': DCASE2013_Scene_EvaluationSet,
+        #}
+        #kwargs['Learners'] = {
+        #    'svm': SceneClassifierSVM,
+        #}
+        #kwargs['FeatureExtractor'] = CustomFeatureExtractor
+
+        super(CustomAppCore, self).__init__(*args, **kwargs)
 
 def main(argv):
     numpy.random.seed(123456)  # let's make randomization predictable
@@ -42,7 +307,9 @@ def main(argv):
 
             System description
 
-
+                A system for DCASE2017 Task 2: Detection of rare sound events.
+                Features: Log Mel Magnitude processed by SNMF Source Separation
+                Classifier: DNN
         '''))
 
     # Setup argument handling
@@ -118,8 +385,7 @@ def main(argv):
 
     for parameter_set in parameters_sets:
         # Initialize ParameterContainer
-        params = ParameterContainer(
-            project_base=os.path.dirname(os.path.realpath(__file__)),
+        params = ParameterContainer(project_base=os.path.dirname(os.path.realpath(__file__)),
             path_structure={
                 'feature_extractor': [
                     'dataset',
@@ -194,7 +460,7 @@ def main(argv):
         # Setup logging
         setup_logging(parameter_container=params['logging'])
 
-        app = Task2AppCore(
+        app = CustomAppCore(
             name='DCASE 2017::Detection of rare sound events / Baseline System',
             params=params,
             system_desc=params.get('description'),

@@ -1,4 +1,4 @@
-function [w, h, objective] = sparse_nmf_MLD(v, mu, p)
+function [w, h, objective] = sparse_nmf_similarity(v, simil_scale, p)
 
 % SPARSE_NMF Sparse NMF with beta-divergence reconstruction error, 
 % L1 sparsity constraint, optimization in normalized basis vector space.
@@ -85,15 +85,7 @@ if ~isfield(p, 'random_seed')
 end
 
 if ~isfield(p, 'sparsity')
-    p.sparsity = 5;
-end
-
-if ~isfield(p, 'sparsity_eta')
-    p.sparsity_eta = 5;
-end
-
-if ~isfield(p, 'sparsity_epsilon')
-    p.sparsity_epsilon = 1;
+    p.sparsity = 0;
 end
 
 if ~isfield(p, 'conv_eps')
@@ -130,19 +122,13 @@ if ~isfield(p, 'init_w')
 else
     ri = size(p.init_w, 2);
     w(:, 1:ri) = p.init_w;
-    if isfield(p, 'r') && ri < p.r
-        w(:, (ri + 1) : p.r) = rand(m, p.r - ri);
-        r = p.r;
-    else
+%     if isfield(p, 'r') && ri < p.r
+%         w(:, (ri + 1) : p.r) = rand(m, p.r - ri);
+%         r = p.r;
+%     else
         r = ri;
-    end
+%     end
 end
-const_MLD_w = zeros(m, r); %Buffer initialization
-const_MLD_h = zeros(r, n); %Buffer initialization
-r_c = p.R_c;
-c_num = round(r / r_c);
-h_l1 = zeros(c_num, n);
-h_l1_span = zeros(r, n);
 
 if ~isfield(p, 'init_h')
     h = rand(r, n);
@@ -181,13 +167,12 @@ flr = 1e-9;
 lambda = max(w * h, flr);
 last_cost = Inf;
 v= max(v, flr);
-const_MLD_w = max(const_MLD_w, flr);
 
 objective = struct;
 objective.div = zeros(1,p.max_iter);
 objective.cost = zeros(1,p.max_iter);
 
-div_beta  = 1; %Fix to KL case
+div_beta  = p.beta;
 h_ind = p.h_update_ind;
 w_ind = p.w_update_ind;
 update_h = sum(h_ind);
@@ -200,34 +185,6 @@ end
 % tic
 for it = 1:p.max_iter
     
-    % W updates
-    if update_w > 0
-        for g = 1:c_num
-            w_c = w(:, (g-1)*r_c+1 : g*r_c);
-            h_c = h((g-1)*r_c+1 : g*r_c, :);
-            mu_c = mu(:, (g-1)*r_c+1 : g*r_c);
-            switch div_beta
-                case 1
-                    dpw = bsxfun(@plus,sum(h_c, 2)', ...
-                        bsxfun(@times, ...
-                        sum((v ./ lambda) * h_c' .* w_c), w_c));
-                    dpw = max(dpw, flr);
-                    dmw = v ./ lambda * h_c' ...
-                        + bsxfun(@times, ...
-                        sum(bsxfun(@times, sum(h_c,2)', w_c)), w_c);
-
-                    %MLD constraints
-                    const_MLD_w = p.sparsity_eta .* mu_c ./ w_c;
-                    w_c = w_c .* (dmw + const_MLD_w) ./ (dpw + p.sparsity_eta);
-            end
-            w(:, (g-1)*r_c+1 : g*r_c) = w_c;
-        end
-        
-        % Normalize the columns of W
-        w = bsxfun(@rdivide,w,sqrt(sum(w.^2)));
-        lambda = max(w * h, flr);
-    end
-
     % H updates
     if update_h > 0
         switch div_beta
@@ -236,16 +193,57 @@ for it = 1:p.max_iter
                 dph = max(dph, flr);
                 dmh = w(:, h_ind)' * (v ./ lambda);
                 h(h_ind, :) = bsxfun(@rdivide, h(h_ind, :) .* dmh, dph);
-                
-                for g = 1:c_num
-                   h_l1(g,:) = sum(h((g-1)*r_c+1 : g*r_c, :), 1);  
-                end
-                h_l1_span = kron(h_l1, ones(r_c,1));
-                const_MLD_h(h_ind, :) = (1 + p.sparsity ./ (p.sparsity_epsilon + h_l1_span(h_ind, :)));
-                h(h_ind, :) = h(h_ind, :) ./ const_MLD_h(h_ind, :);
+            case 2
+                dph = w(:, h_ind)' * lambda + p.sparsity;
+                dph = max(dph, flr);
+                dmh = w(:, h_ind)' * v;
+                h(h_ind, :) = h(h_ind, :) .* dmh ./ dph;
+            otherwise
+                dph = w(:, h_ind)' * lambda.^(div_beta - 1) + p.sparsity;
+                dph = max(dph, flr);
+                dmh = w(:, h_ind)' * (v .* lambda.^(div_beta - 2));
+                h(h_ind, :) = h(h_ind, :) .* dmh ./ dph;                
         end
+        h = h .* simil_scale;
         lambda = max(w * h, flr);
-    end    
+    end
+
+    
+    % W updates
+    if update_w > 0
+        switch div_beta
+            case 1
+                dpw = bsxfun(@plus,sum(h(w_ind, :), 2)', ...
+                    bsxfun(@times, ...
+                    sum((v ./ lambda) * h(w_ind, :)' .* w(:, w_ind)), w(:, w_ind)));
+                dpw = max(dpw, flr);
+                dmw = v ./ lambda * h(w_ind, :)' ...
+                    + bsxfun(@times, ...
+                    sum(bsxfun(@times, sum(h(w_ind, :),2)', w(:, w_ind))), w(:, w_ind));
+                w(:, w_ind) = w(:,w_ind) .* dmw ./ dpw;
+            case 2
+                dpw = lambda * h(w_ind, :)' ...
+                    + bsxfun(@times, sum(v * h(w_ind, :)' .* w(:, w_ind)), w(:, w_ind));
+                dpw = max(dpw, flr);
+                dmw = v * h(w_ind, :)' + ...
+                    bsxfun(@times, sum(lambda * h(w_ind, :)' .* w(:, w_ind)), w(:, w_ind));
+                w(:, w_ind) = w(:,w_ind) .* dmw ./ dpw;
+            otherwise
+                dpw = lambda.^(div_beta - 1) * h(w_ind, :)' ...
+                    + bsxfun(@times, ...
+                    sum((v .* lambda.^(div_beta - 2)) * h(w_ind, :)' .* w(:, w_ind)), ...
+                    w(:, w_ind));
+                dpw = max(dpw, flr);
+                dmw = (v .* lambda.^(div_beta - 2)) * h(w_ind, :)' ...
+                    + bsxfun(@times, ...
+                    sum(lambda.^(div_beta - 1) * h(w_ind, :)' .* w(:, w_ind)), w(:, w_ind));
+                w(:, w_ind) = w(:,w_ind) .* dmw ./ dpw;
+        end
+        % Normalize the columns of W
+        w = bsxfun(@rdivide,w,sqrt(sum(w.^2)));
+        lambda = max(w * h, flr);
+    end
+    
     
     % Compute the objective function
     switch div_beta
