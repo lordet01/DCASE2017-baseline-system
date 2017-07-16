@@ -1,4 +1,4 @@
-function [x_hat_i,d_hat_i, x_tilde, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
+function [x_hat_i,d_hat_i, x_tilde, A, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
 
 
 %% Global buffer initialize
@@ -103,11 +103,11 @@ if blk_cnt==h
     
     %% 1) Perform SNMF separation
     if p.basis_update_N
-        p.w_update_ind = [false(R_x,1); true(R_d,1)]; % Semi-supervised:
+        p.w_update_ind = [false(R_x + R_d - p.R_semi,1); true(p.R_semi,1)]; % Semi-supervised:
         %         B_Mel = [B_Mel_x, rand(n1,R_d)];
         %         B_DFT = [B_DFT_x, rand(n2,R_d)];
     elseif p.basis_update_E
-        p.w_update_ind = [true(R_x,1); false(R_d,1)]; % Semi-supervised:
+        p.w_update_ind = [true(p.R_semi,1); false(R_x + R_d - p.R_semi,1)]; % Semi-supervised:
         %         B_Mel = [rand(n1,R_x), B_Mel_d];
         %         B_DFT = [rand(n2,R_x), B_DFT_d];
     elseif p.basis_update_N && p.basis_update_E
@@ -127,17 +127,20 @@ if blk_cnt==h
     end
     
     p.h_update_ind = true(r,1);
-    
-    if p.sep_MLD == 1
-        [~, A] = sparse_nmf_MLD(Y_sep, 0, p);
+    %% Check Sparsity between Input and Basis
+    if p.SparseCheck == 1
+        n_tmp = size(Y_sep,1);
+        SC_BandL = floor(p.SC_RatioL * n_tmp);
+        SC_BandH = floor(p.SC_RatioH * n_tmp);
+        [Q_Y]= blk_sparse_single(Y_sep(SC_BandL:SC_BandH, :), p);
+        [Q_B]= blk_sparse_single(p.init_w(SC_BandL:SC_BandH, :), p);
+        Q_H = 1 - abs(Q_B' - Q_Y);
+        simil_scale = Q_H .^ p.SC_pow;
+        [~, A] = sparse_nmf_similarity(Y_sep, simil_scale, p);
     else
-        if p.useGPU == 0
-            [~, A] = sparse_nmf(Y_sep, p);
-        else
-            [~, A] = sparse_nmf_GPU(Y_sep, p);
-        end
-    end    
-    
+        [~, A] = sparse_nmf(Y_sep, p);
+    end
+
     %Multiclass separation (Event)
     for i = 1:p.EVENT_NUM
         if i == p.EVENT_NUM
@@ -200,6 +203,7 @@ if blk_cnt==h
     else
         Q = ones(n2_unit, m);
     end
+    
     
     %% 3) Enhancement Filter Construction
     if strcmp(p.ENHANCE_METHOD, 'Wiener') || strcmp(p.ENHANCE_METHOD, 'MMSE')
@@ -346,7 +350,7 @@ if blk_cnt==h
                 B_DFT_d_rem = B_DFT_d_rem(:,any(B_DFT_d_rem,1)); %Exclude all-zero columns
                 
                 [~,R_a_up] = size(B_DFT_d_up);
-                B_DFT_d_fix = B_Mel_d(:,p.R_a+1 : end);
+                B_DFT_d_fix = B_DFT_d(:,p.R_a+1 : end);
                 %                     disp(R_a_up);
                 if R_a_up > 0
                     p.w_update_ind = true(R_a_up,1);
@@ -366,7 +370,6 @@ if blk_cnt==h
             g.update_switch = g.update_switch + 1;
         end
     end
-    
     
     blk_cnt = 0;
 end
@@ -409,17 +412,16 @@ g.l_mod_lswitch = l_mod_lswitch;
 g.Xm_tilde = Xm_tilde;
 g.r_blk = r_blk;
 
-%Experimental function (Scatter plot between 1/r and q in Fig. 2 of Signal
-%Processing Letter, kmjeon, 2017-03-13
-if p.r_q_analsys == 1
-    r_q_unit = [Q, aprior_SNR];
-    r_q_unit = r_q_unit(5:510,:);
-    if g.r_q == 0
-        g.r_q = r_q_unit;
-    else
-        g.r_q = [g.r_q; r_q_unit];
-    end
-end
-
+% % % %Experimental function (Scatter plot between 1/r and q in Fig. 2 of Signal
+% % % %Processing Letter, kmjeon, 2017-03-13
+% % % if p.r_q_analsys == 1
+% % %     r_q_unit = [Q, aprior_SNR];
+% % %     r_q_unit = r_q_unit(5:510,:);
+% % %     if g.r_q == 0
+% % %         g.r_q = r_q_unit;
+% % %     else
+% % %         g.r_q = [g.r_q; r_q_unit];
+% % %     end
+% % % end
 
 end

@@ -7,7 +7,7 @@ p.NMF_algorithm = 'SNMF';
 p.useGPU = 0;
 p.ForceRewrite = 1; %Forcely rewrite output file
 p.ForceRetrain = 0; %Forcely retrain bases
-p.ForceRetrain_MLD = 1; %Forcely retrain bases only for MLD
+p.ForceRetrain_MLD = 0; %Forcely retrain bases only for MLD
 
 % BNMF block
 p.blk_len_sep=1;
@@ -32,12 +32,12 @@ p.win_ISTFT = sqrt(hann(p.framelength,'periodic')); %Set type of window
 p.pow = 2; %Power coefficient: [1: Mag., 2: Pow]
 
 % NMF parameters
-p.R_c = 4; %Unit rank of spectral cone
-p.R_x = p.R_c * 10;
-p.R_d = p.R_c * 25;
+p.R_c = 2; %Unit rank of spectral cone
+p.R_x = p.R_c * 5;
+p.R_d = p.R_c * 5;
 p.nonzerofloor = 1e-9;
 
-% Basis Training parameters
+%% Basis Training parameters (Mixture of Learned Dictionary, MLD, Sig.Proc. Lett. 15, M. Kim)
 p.train_Exemplar = 0; %train with SNMF if 0
 p.train_MLD = 1; %Retrain Bases with MLD
 p.cluster_buff = 1; %Maximum rank scale before clustering (1: Turn off clustering)
@@ -46,17 +46,25 @@ p.load_file_num = 0; %set only for debug, 0 for load every files in a folder
 p.sil_len = 0.5; %minimum length of silence between sub-event. (s)
 
 
-%Basis update option
-p.adapt_train_N = 1;
-p.init_N_len = 15; %No. of initial frames used for nosie basis update
+%% Basis update option (Online Dictionary Learning, ODL, Interspeech 16, K. M. Jeon)
+p.adapt_train_N =1;
+p.init_N_len = 100; %No. of initial frames used for nosie basis update
 p.R_a = floor(0.5 * p.R_d);
 p.m_a = 100; %No. of stacked block for basis adaptation
 p.overlap_m_a = 0.01; %Update cycle for noise learning
-p.Ar_up = 4.0; %Define Ax and Ad ratio for noise dictionary update (Higher: Update frequently, Lower: Update rarely)
+p.Ar_up = 1.0; %Define Ax and Ad ratio for noise dictionary update (Higher: Update frequently, Lower: Update rarely)
 p.B_D_u_name = 'B_D_u.mat';
+p.basis_update_N = 0;
+p.basis_update_E = 0;
+p.R_semi = floor(0.1 * p.R_d);
  
+%% Sparsity-Based Similarity Check between Input and Basis (17, K. M. Jeon)
+p.SparseCheck = 1;
+p.SC_RatioL = 0.08;
+p.SC_RatioH = 0.95;
+p.SC_pow = 2;
 
-%Block sparsity options
+%% Block sparsity options (Block Sparsity Measure for ODL, DSP 17, K. M. Jeon)
 p.blk_sparse = 1; %block sparsity switch
 p.P_len_k = 8; % vertical (frequency bin) size of Block for local sparsity calculation
 p.P_len_l = 6; % horizental (time frame index) size of Block for local sparsity calculation
@@ -101,7 +109,7 @@ p.filegap = p.ch; %No. of file consisting one session
 
 %Training options 
 p.separation = 1;
-p.B_sep_mode = 'DFT'; %['DFT', 'Mel']
+p.B_sep_mode = 'Mel'; %['DFT', 'Mel']
 p.MelConv = 1; %Use frequency scale conversion. 00: Coupled dictionary
 p.train_VAD = 0;
 p.train_ANOT = 0;
@@ -117,10 +125,7 @@ p.conv_eps = 1e-3;
 p.display   = 0; % Display evolution of objective function
 p.random_seed = 1; % Random seed: any value over than 0 sets the seed to that value
 p.cost_check = 1;
-p.basis_update_N = 0;
-p.basis_update_E = 0;
 p.est_scale = 1.0;
-p.sep_MLD = 0; %Use NMF_MLD as activation estimation function
 
 
 %Single channel enhancement options

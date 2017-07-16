@@ -9,6 +9,7 @@
 
 tic;
 in_path = './wav_sample';
+out_path = './wav_sample/proc_MLD_ODL_up1_target_event_lowB_Mel_SC_multinoiseB';
 mkdir(out_path);
 
 
