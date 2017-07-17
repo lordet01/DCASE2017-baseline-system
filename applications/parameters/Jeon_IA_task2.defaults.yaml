@@ -5,7 +5,7 @@ sets:
     description: DCASE2017 baseline (CPU) using DCASE2017 task 2 development dataset
 
     feature_stacker:
-      stacking_recipe: mel
+      stacking_recipe: feat_MATLAB
 
     feature_aggregator:
       enable: true
@@ -104,7 +104,7 @@ sets:
     description: DCASE2017 baseline (GPU) using DCASE2017 task 2 development dataset
 
     feature_stacker:
-      stacking_recipe: mel
+      stacking_recipe: feat_MATLAB
 
     feature_aggregator:
       enable: true
@@ -427,6 +427,18 @@ defaults:
       htk: false                            # Switch for HTK-styled mel-frequency equation
       log: true                             # Logarithmic
 
+    feat_MATLAB:                            # In-Dev Feature Extractor Outside Python (MATLAB)
+      mono: true                            # [true, false]
+      window: hamming_asymmetric            # [hann_asymmetric, hamming_asymmetric]
+      spectrogram_type: magnitude           # [magnitude, power]
+      n_mels: 40                            # Number of mel bands used
+      normalize_mel_bands: false            # [true, false]
+      n_fft: 2048                           # FFT length
+      fmin: 0                               # Minimum frequency when constructing mel bands
+      fmax: 22050                           # Maximum frequency when constructing mel band
+      htk: false                            # Switch for HTK-styled mel-frequency equation
+      log: true                             # Logarithmic
+
     mfcc:                                   # Mel-frequency cepstral coefficients
       mono: true                            # [true, false]
       window: hamming_asymmetric            # [hann_asymmetric, hamming_asymmetric]
@@ -458,7 +470,7 @@ defaults:
     #  - [extractor (string)]=0                                                     => specified channel and full vector
     # Multiple vector can be concatenate together with ";" delimiter
     # ==========================================================
-    stacking_recipe: mel
+    stacking_recipe: feat_MATLAB
 
   # ==========================================================
   # Feature normalizer

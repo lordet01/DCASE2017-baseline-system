@@ -573,7 +573,8 @@ class FeatureExtractor(object):
             'mfcc',
             'mfcc_delta',
             'mfcc_acceleration',
-            'mel'
+            'mel',
+            'feat_MATLAB'
         ]
         self.valid_extractors += kwargs.get('valid_extractors', [])
 
@@ -605,6 +606,18 @@ class FeatureExtractor(object):
                 'dependency_method': 'mfcc',
             },
             'mel': {
+                'mono': True,  # [True, False]
+                'window': 'hamming_asymmetric',  # [hann_asymmetric, hamming_asymmetric]
+                'spectrogram_type': 'magnitude',  # [magnitude, power]
+                'n_mels': 40,  # Number of MEL bands used
+                'normalize_mel_bands': False,  # [True, False]
+                'n_fft': 2048,  # FFT length
+                'fmin': 0,  # Minimum frequency when constructing MEL bands
+                'fmax': 22050,  # Maximum frequency when constructing MEL band
+                'htk': True,  # Switch for HTK-styled MEL-frequency equation
+                'log': True,  # Logarithmic
+            },
+            'feat_MATLAB': {
                 'mono': True,  # [True, False]
                 'window': 'hamming_asymmetric',  # [hann_asymmetric, hamming_asymmetric]
                 'spectrogram_type': 'magnitude',  # [magnitude, power]
@@ -780,7 +793,7 @@ class FeatureExtractor(object):
                 # Extract features
                 extractor_func = getattr(self, '_{}'.format(extractor_name), None)
                 if extractor_func is not None:
-                    data = extractor_func(data=data, params=current_extractor_params)
+                    data = extractor_func(data=data, params=current_extractor_params, audio_file=audio_file)
 
                     # Feature extraction meta information
                     meta = {
@@ -970,6 +983,74 @@ class FeatureExtractor(object):
             acceleration = librosa.feature.delta(data[channel].T, order=2, width=params.get('width'))
 
             feature_matrix.append(acceleration.T)
+
+        return feature_matrix
+
+    def _feat_MATLAB(self, data, params, audio_file):
+        """Custom feature extracted at MATLAB codes
+
+        Parameters
+        ----------
+        data : numpy.ndarray
+            Audio data.
+        params : dict
+            Parameters.
+        audio_file : str
+            Audio File Path
+
+        Returns
+        -------
+        list of numpy.ndarray
+            List of feature matrices, feature matrix per audio channel.
+
+        
+        """
+
+        # Run MATLAB feature extractor script
+        """
+        window = self._window_function(N=params.get('win_length_samples'),
+                                       window_type=params.get('window'))
+
+        mel_basis = librosa.filters.mel(sr=params.get('fs'),
+                                        n_fft=params.get('n_fft'),
+                                        n_mels=params.get('n_mels'),
+                                        fmin=params.get('fmin'),
+                                        fmax=params.get('fmax'),
+                                        htk=params.get('htk'))
+
+        if params.get('normalize_mel_bands'):
+            mel_basis /= numpy.max(mel_basis, axis=-1)[:, None]
+
+
+        feature_matrix = []
+        for channel in range(0, data.shape[0]):
+            spectrogram_ = self._spectrogram(
+                y=data[channel, :],
+                n_fft=params.get('n_fft'),
+                win_length_samples=params.get('win_length_samples'),
+                hop_length_samples=params.get('hop_length_samples'),
+                spectrogram_type=params.get('spectrogram_type') if 'spectrogram_type' in params else 'magnitude',
+                center=True,
+                window=window
+            )
+
+            mel_spectrum = numpy.dot(mel_basis, spectrogram_)
+            """
+
+        import scipy.io
+        import subprocess
+        process = subprocess.call(['.\\feat_MATLAB.bat', '\'' + audio_file + '\''])
+
+        mel_spectrum = scipy.io.loadmat('./feat_Jeon_IA/tmp/tmp_melfeat.mat')
+        mel_spectrum = mel_spectrum['mel_spectrum']
+
+        feature_matrix = []
+        if params.get('log'):
+            mel_spectrum = numpy.log(mel_spectrum + self.eps)
+
+            mel_spectrum = mel_spectrum.T
+
+        feature_matrix.append(mel_spectrum)
 
         return feature_matrix
 

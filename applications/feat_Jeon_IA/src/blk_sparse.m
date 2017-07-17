@@ -1,20 +1,16 @@
 function [Q, r_blk_out]=blk_sparse(X, D, r_blk, l, p)
 
 [K,~] = size(X);
-% blk_gapN2 = (p.blk_gap-1)/2;
-% %Unroll the splice
-% e = reshape(e, [p.fftlength/2+1, p.Splice*2+1]);
-% d = reshape(d, [p.fftlength/2+1, p.Splice*2+1]);
 
-    % Method1: Q. Hoyer
-%     SNR_local = (X.^p.pow) ./ max(X.^p.pow + D.^p.pow, p.nonzerofloor);
-    SNR_local = (X.^p.pow) ./ max(D.^p.pow, p.nonzerofloor);
-    SNR_local = max(SNR_local, p.regul);
-%     disp(SNR_local);
+
+SNR_local = (X.^p.pow) ./ max(D.^p.pow, p.nonzerofloor);
+SNR_local = max(SNR_local, p.regul);
+
 
 r_blk_out = [r_blk(:,2:p.P_len_l) SNR_local];
 
-Q = [zeros(p.DCbin,1); 0.1*ones(K - p.DCbin,1)];
+% Q = [zeros(p.DCbin,1); 0.1*ones(K - p.DCbin,1)];
+Q = 0.1*ones(K,1);
 n = p.P_len_l .* p.P_len_k;
 P_len_k2 = floor(p.P_len_k*0.5);
 if l> p.P_len_l
@@ -30,11 +26,11 @@ if l> p.P_len_l
         Q(k - P_len_k2:k + P_len_k2) = (p.beta_p) * Q(k - p.blk_gap - P_len_k2:k - p.blk_gap + P_len_k2) ...
             + (1-p.beta_p) * P_val;
     end
-    Q(1:p.P_len_k-1) = Q(p.P_len_k+p.DCbin);
+%     Q(1:p.P_len_k-1) = Q(p.P_len_k+p.DCbin);
 end
 %     if mean(Q) < p.Q_sig_c
 %         Q = zeros(size(Q));
 %     end
 Q = sigmf(Q, [p.Q_sig_a p.Q_sig_c]);
-Q(1:p.DCbin) = 0;
+% Q(1:p.DCbin) = 0;
 end

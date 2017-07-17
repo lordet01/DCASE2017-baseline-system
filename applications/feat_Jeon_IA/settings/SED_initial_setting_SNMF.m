@@ -48,7 +48,7 @@ p.sil_len = 0.5; %minimum length of silence between sub-event. (s)
 
 %% Basis update option (Online Dictionary Learning, ODL, Interspeech 16, K. M. Jeon)
 p.adapt_train_N =1;
-p.init_N_len = 100; %No. of initial frames used for nosie basis update
+p.init_N_len = 15; %No. of initial frames used for nosie basis update
 p.R_a = floor(0.5 * p.R_d);
 p.m_a = 100; %No. of stacked block for basis adaptation
 p.overlap_m_a = 0.01; %Update cycle for noise learning
@@ -111,6 +111,7 @@ p.filegap = p.ch; %No. of file consisting one session
 p.separation = 1;
 p.B_sep_mode = 'Mel'; %['DFT', 'Mel']
 p.MelConv = 1; %Use frequency scale conversion. 00: Coupled dictionary
+p.MelOut = 0; %Use Mel spectrum at synthesizing wavform
 p.train_VAD = 0;
 p.train_ANOT = 0;
 

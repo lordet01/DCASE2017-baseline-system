@@ -1,4 +1,4 @@
-function [x_hat_i,d_hat_i, x_tilde, A, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
+function [x_hat_i,d_hat_i, x_tilde, feat, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
 
 
 %% Global buffer initialize
@@ -148,7 +148,7 @@ if blk_cnt==h
         else
             R_x_i = p.EVENT_RANK(i):p.EVENT_RANK(i+1)-1;
         end
-        if strcmp(p.B_sep_mode, 'Mel') && p.MelConv
+        if strcmp(p.B_sep_mode, 'Mel')
             tmp_Xm_hat_Mel = B_Mel(:,R_x_i)*A(R_x_i, :);
             
             %Get Last frame from supervector
@@ -171,7 +171,7 @@ if blk_cnt==h
             R_d_i = R_x+p.NOISE_RANK(i):R_x+p.NOISE_RANK(i+1)-1;
         end
         
-        if strcmp(p.B_sep_mode, 'Mel') && p.MelConv
+        if strcmp(p.B_sep_mode, 'Mel')
             tmp_Dm_hat_Mel = B_Mel(:,R_d_i)*A(R_d_i, :);
             
             %Get Last frame from supervector
@@ -185,31 +185,39 @@ if blk_cnt==h
             Dm_hat(i,:,:) = tmp_Dm_hat(:,:);
         end
     end
-    Xm_hat_sum = shiftdim(sum(Xm_hat,1));
-    Dm_hat_sum = shiftdim(sum(Dm_hat,1));
-    
-    %Get Ym_Mel_DFT
-    Ym_Mel_DFT = Ym;
-    if strcmp(p.B_sep_mode, 'Mel') && p.MelConv
-        for k = 1 : p.Splice * 2 + 1
-            Ym_Mel_DFT(1+(k-1)*fftlen2 : k*fftlen2, :) = ...
-                g.melmat'*shiftdim(Ym_Mel(1+(k-1)*n1_unit : k*n1_unit, :));
-        end
+    if strcmp(p.B_sep_mode, 'Mel')
+        Xm_Mel_sum = shiftdim(sum(Xm_Mel,1));
+        Dm_Mel_sum = shiftdim(sum(Dm_Mel,1));
+        Xm_sep = Xm_Mel_sum;
+        Dm_sep = Dm_Mel_sum;
+    else
+        Xm_hat_sum = shiftdim(sum(Xm_hat,1));
+        Dm_hat_sum = shiftdim(sum(Dm_hat,1));
+        Xm_sep = Xm_hat_sum;
+        Dm_sep = Dm_hat_sum;
     end
+
+% %     %Get Ym_Mel_DFT
+% %     Ym_Mel_DFT = Ym;
+% %     if strcmp(p.B_sep_mode, 'Mel')
+% %         for k = 1 : p.Splice * 2 + 1
+% %             Ym_Mel_DFT(1+(k-1)*fftlen2 : k*fftlen2, :) = ...
+% %                 g.melmat'*shiftdim(Ym_Mel(1+(k-1)*n1_unit : k*n1_unit, :));
+% %         end
+% %     end
     
     %% Calculate Block Sparsity
     if p.blk_sparse
-        [Q, r_blk]= blk_sparse(Xm_hat_sum, Dm_hat_sum, r_blk, l, p);
+        [Q, r_blk]= blk_sparse(Xm_sep, Dm_sep, r_blk, l, p);
     else
         Q = ones(n2_unit, m);
     end
-    
     
     %% 3) Enhancement Filter Construction
     if strcmp(p.ENHANCE_METHOD, 'Wiener') || strcmp(p.ENHANCE_METHOD, 'MMSE')
         %Estimate smoothed noise PSD
         if l == 1
-            lambda_dav=Ym_Mel_DFT;
+            lambda_dav=Y_sep;
         end
         
         %% A ratio calculation %20160315
@@ -226,22 +234,32 @@ if blk_cnt==h
         %         disp( beta );
         %         beta = p.G_beta;
         
-        lambda_dav=p.alpha_d.*lambda_dav+(1-p.alpha_d).*Dm_hat_sum * beta;
+        lambda_dav=p.alpha_d.*lambda_dav+(1-p.alpha_d).*Dm_sep * beta;
         lambda_d=lambda_dav;  % new version
         
         if strcmp(p.ENHANCE_METHOD, 'Wiener')
-            G = Xm_hat_sum ./ (Xm_hat_sum + Dm_hat_sum * p.G_beta);
+            G = Xm_sep ./ (Xm_sep + Dm_sep * p.G_beta);
         elseif strcmp(p.ENHANCE_METHOD, 'MMSE')
             eta = (p.alpha_eta * Xm_tilde + ...
-                (1-p.alpha_eta) * Xm_hat_sum .* Q) ./ max(lambda_d, p.nonzerofloor);
-            
+                (1-p.alpha_eta) * Xm_sep .* Q) ./ max(lambda_d, p.nonzerofloor);
             
             eta = max(p.G_floor, eta);
             G =  eta ./ (eta+ones(size(eta)));
         end
         G = min(G, 1);
     end
-    Xm_tilde = G.* Ym;
+    Xm_tilde = G.* Y_sep;
+    feat = Xm_tilde;
+    
+    if strcmp(p.B_sep_mode, 'Mel')
+        if p.MelOut
+            Xm_tilde_out = g.melmat' * Xm_tilde;
+        else
+            Xm_tilde_out = (g.melmat' * G) .* Ym;
+        end
+    else
+        Xm_tilde_out = G.* Ym;
+    end
     
     %% --------block-wise inverse STFT-------------
     for i = 1:p.NOISE_NUM
@@ -262,10 +280,10 @@ if blk_cnt==h
         
         %Compensate phase components by SNR (08_K Wojcikci)
         if p.phase_comp == 1
-            aprior_SNR = (Dm_hat_sum .^ (1/p.pow) ./ (Xm_tilde .^ (1/p.pow) + 1));
+            aprior_SNR = (Dm_hat_sum .^ (1/p.pow) ./ (Xm_tilde_out .^ (1/p.pow) + 1));
             aprior_SNR(1:p.DCbin) = 1;
             aprior_SNR(aprior_SNR<0) = eps;
-            Interf = (1-Q) .* (Xm_tilde.^ (1/p.pow)) - Q .* (Dm_hat_sum .^ (1/p.pow));
+            Interf = (1-Q) .* (Xm_tilde_out.^ (1/p.pow)) - Q .* (Dm_hat_sum .^ (1/p.pow));
             Interf(Interf<0) = eps;
             D = Dm_hat_sum .^ (1/p.pow) + Interf;
             phase_lambda = aprior_SNR .* D;
@@ -279,11 +297,11 @@ if blk_cnt==h
         phase_lambda = [phase_lambda; -1* flipud(phase_lambda(2:end-1))];
         X_tilde_mod = Y + phase_lambda;
         X_tilde_p = angle(X_tilde_mod);
-        Xm_tilde = (Xm_tilde.^ (1/p.pow));
-        Xm_tilde(Xm_tilde<0) = eps;
-        x_tilde = synth_ifft_buff(Xm_tilde(splice_ext,:), X_tilde_p(:,:), sz, fftlen, p.win_ISTFT, p.preemph, p.DCbin_back, 1);
+        Xm_tilde_out = (Xm_tilde_out.^ (1/p.pow));
+        Xm_tilde_out(Xm_tilde_out<0) = eps;
+        x_tilde = synth_ifft_buff(Xm_tilde_out(splice_ext,:), X_tilde_p(:,:), sz, fftlen, p.win_ISTFT, p.preemph, p.DCbin_back, 1);
     else
-        x_tilde = synth_ifft_buff(Xm_tilde(splice_ext,:), Yp(splice_ext,:), sz, fftlen, p.win_ISTFT, p.preemph, p.DCbin_back, p.pow);
+        x_tilde = synth_ifft_buff(Xm_tilde_out(splice_ext,:), Yp(splice_ext,:), sz, fftlen, p.win_ISTFT, p.preemph, p.DCbin_back, p.pow);
     end
     x_tilde = x_tilde * p.overlapscale;
     
@@ -294,11 +312,11 @@ if blk_cnt==h
     if p.adapt_train_N && ( Q_control*A_d_mag > A_x_mag)
         
         if l <= p.init_N_len %Init condition
-            D_ref = Ym;
+            D_ref = Y_sep;
         else
             M_ref =  (1-G);
-            M_ref(1:p.DCbin) = zeros(p.DCbin,1) + p.nonzerofloor;
-            D_ref = Ym .* M_ref;
+%             M_ref(1:p.DCbin) = zeros(p.DCbin,1) + p.nonzerofloor;
+            D_ref = Y_sep .* M_ref;
         end
         
         %Estimate smoothed noise PSD
@@ -318,11 +336,11 @@ if blk_cnt==h
         if g.update_switch == floor(p.overlap_m_a * p.m_a)
             
             if strcmp(p.B_sep_mode, 'Mel')
-                lambda_d_blk_Mel = zeros(n1, p.m_a);
-                for k = 1 : p.Splice * 2 + 1
-                    lambda_d_blk_Mel(1+(k-1)*n1_unit : k*n1_unit, :) = ...
-                        g.melmat*shiftdim(lambda_d_blk(1+(k-1)*fftlen2 : k*fftlen2, :));
-                end
+% %                 lambda_d_blk_Mel = zeros(n1, p.m_a);
+% %                 for k = 1 : p.Splice * 2 + 1
+% %                     lambda_d_blk_Mel(1+(k-1)*n1_unit : k*n1_unit, :) = ...
+% %                         g.melmat*shiftdim(lambda_d_blk(1+(k-1)*fftlen2 : k*fftlen2, :));
+% %                 end
                 B_Mel_d_up = B_Mel_d(:,1:p.R_a) .* repmat(r_up', [n1 1]);
                 B_Mel_d_up = B_Mel_d_up(:,any(B_Mel_d_up,1)); %Exclude all-zero columns
                 B_Mel_d_rem = B_Mel_d(:,1:p.R_a) .* repmat(r_up_inv', [n1 1]);
@@ -335,7 +353,7 @@ if blk_cnt==h
                     p.h_update_ind = false(R_a_up,1);
                     p.init_w = B_Mel_d_up; %given from exemplar basis as initialization
                     p.init_h = Ad_blk_up; %given from exemplar basis as initialization
-                    [B_d_tmp, ~] = sparse_nmf(lambda_d_blk_Mel, p);
+                    [B_d_tmp, ~] = sparse_nmf(lambda_d_blk, p);
                     
                     
                     B_Mel_d = [B_Mel_d_rem, B_d_tmp, B_Mel_d_fix];

@@ -1,9 +1,34 @@
-function filewise_SourceSep(path_in, path_denoise, event_list, event_target)
+function filewise_MelFeat_DCASE(path_in)
 
 addpath('src');
 addpath('settings');
 
+%Path definition
+[file_name, path_mid] = strtok(flip(path_in), '\\');
+file_name = flip(file_name);
+path_mid = flip(path_mid);
+path_out = [path_mid,'/proc']; mkdir(path_out);
+path_denoise = [path_out, '/', file_name];
+
+
+event_list = {'babycry', 'glassbreak', 'gunshot'};
+K = strfind(path_in, 'babycry');
+if K >= 1
+    event_target = 'babycry';
+end
+
+K = strfind(path_in, 'glassbreak');
+if K >= 1
+    event_target = 'glassbreak';
+end
+
+K = strfind(path_in, 'gunshot');
+if K >= 1
+    event_target = 'gunshot';
+end
+
 [~,ftype] = strtok(path_in, '.');
+
 
 SED_initial_setting_SNMF;
 
@@ -67,10 +92,9 @@ else
 end
 B2_x = B_DFT_x; B2_d = B_DFT_d;
 
-
 ch = p.ch;
 
-%multichannel file I/O initialization
+%Multichannel file I/O initialization
 for j = 1:ch
     fin(j) = fopen([path_in(j,:)],'rb');
 end
@@ -116,11 +140,11 @@ end
 l = 1;
 cnt_residue = 0;
 s_in_sub = zeros(ch, frame_shift);
-A_traj = 0;
+feat_traj = 0;
 while (1)
     
     %Check eof
-    [~, len] = fread(fin(1), frame_shift, 'int16');
+    [~, len] = fread(fin(1), frame_shift, 'bit24');
     
     if cnt_residue > p.delay
         break;
@@ -130,9 +154,10 @@ while (1)
         cnt_residue = cnt_residue + 1;
         y = zeros(ch, frame_len, 1);
     else
-        fseek(fin(1),-2*frame_shift,0); %Rewind file pointer moved by eof check
+        fseek(fin(1),-3*frame_shift,0); %Rewind file pointer moved by eof check
         for j = 1:ch
-            [s_in_sub(j,:), ~] = fread(fin(j), frame_shift, 'int16');
+            [s_in_sub(j,:), ~] = fread(fin(j), frame_shift, 'bit24');
+            s_in_sub = s_in_sub ./ ((2^24)-1);
         end
         
         %Frame_wise queing
@@ -156,7 +181,7 @@ while (1)
     elseif strcmp(p.NMF_algorithm,'PMWF')
 %         [e_est_frame,n_est_frame, d_frame, g] = bntf_sep_event_RT_PMWF(y, g, p);
     elseif strcmp(p.NMF_algorithm,'SNMF')
-        [~,~ , d_frame, A_frm, g] = nmf_sep_event_RT_DCASE17(y, l, g, p);
+        [~,~ , d_frame, feat, g] = nmf_sep_event_RT_DCASE17(y, l, g, p);
     end
     
     for j =1:ch
@@ -179,23 +204,26 @@ while (1)
             x_tilde(j,1:frame_len-frame_shift) = x_tilde(j,frame_shift+1:frame_len);
             x_tilde(j,frame_len-frame_shift+1:frame_len) = zeros(frame_shift,1);
             x_tilde(j,:) = x_tilde(j,:) + d_frame(j,:);
-            fwrite(fdenoise(j), x_tilde(j,1:frame_shift), 'int16');
+            fwrite(fdenoise(j), x_tilde(j,1:frame_shift).*((2^24)-1), 'bit24');
         end
     end
     
     %Store Activation trajectory
-    if A_traj == 0
-        A_traj = A_frm;
+    if feat_traj == 0
+        feat_traj = feat;
     else
-        A_traj = [A_traj, A_frm];
+        feat_traj = [feat_traj, feat];
     end
     
     l = l + 1;
 end
-save([path_denoise(1,:),'.mat'], 'A_traj'); %Store Activation trajectory
+mel_spectrum = feat_traj;
+save(['./tmp/tmp_melfeat.mat'], 'mel_spectrum'); %Store Activation trajectory
 
 fclose('all');
 
 for j = 1:ch
-    pcm2wav(path_denoise(j,:), p);
+    pcm2wav(path_denoise(j,:), 24, p);
 end
+
+quit;
