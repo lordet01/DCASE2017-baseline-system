@@ -1039,7 +1039,7 @@ class FeatureExtractor(object):
 
         import scipy.io
         import subprocess
-        process = subprocess.call(['.\\feat_MATLAB.bat', '\'' + audio_file + '\''])
+        subprocess.call(['.\\feat_MATLAB.bat', '\'' + audio_file + '\''])
 
         mel_spectrum = scipy.io.loadmat('./feat_Jeon_IA/tmp/tmp_melfeat.mat')
         mel_spectrum = mel_spectrum['mel_spectrum']

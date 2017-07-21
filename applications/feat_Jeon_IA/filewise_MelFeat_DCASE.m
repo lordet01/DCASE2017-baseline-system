@@ -40,8 +40,10 @@ end
 
 %% Load and organize event bases
 K = length(event_list);
-B_DFT_x_buff = zeros(p.F_DFT_order, p.R_x * (K-1));
-B_Mel_x_buff = zeros(p.F_order, p.R_x * (K-1));
+n1 = p.F_order * floor(2*p.Splice+1);
+n2 = p.F_DFT_order * floor(2*p.Splice+1);
+B_Mel_x_buff = zeros(n1, p.R_x * (K-1));
+B_DFT_x_buff = zeros(n2, p.R_x * (K-1));
 k_idx = 1;
 for k = 1:K
     name = event_list{k};
@@ -131,9 +133,9 @@ x_tilde = zeros(ch, frame_len,1);
 
 %% Wav processing
 if strcmp(ftype,'.wav')
-    header = zeros(ch, 22);
+    header = zeros(ch, 44);
     for j = 1:ch
-        header(j, :)=fread(fin(j), 22, 'int16'); %Skip wav header parts
+        header(j, :)=fread(fin(j), 44, 'int8'); %Skip wav header parts
     end
 end
 
@@ -157,7 +159,7 @@ while (1)
         fseek(fin(1),-3*frame_shift,0); %Rewind file pointer moved by eof check
         for j = 1:ch
             [s_in_sub(j,:), ~] = fread(fin(j), frame_shift, 'bit24');
-            s_in_sub = s_in_sub ./ ((2^24)-1);
+            s_in_sub = s_in_sub ./ ((2^23)-1);
         end
         
         %Frame_wise queing
@@ -204,7 +206,7 @@ while (1)
             x_tilde(j,1:frame_len-frame_shift) = x_tilde(j,frame_shift+1:frame_len);
             x_tilde(j,frame_len-frame_shift+1:frame_len) = zeros(frame_shift,1);
             x_tilde(j,:) = x_tilde(j,:) + d_frame(j,:);
-            fwrite(fdenoise(j), x_tilde(j,1:frame_shift).*((2^24)-1), 'bit24');
+            fwrite(fdenoise(j), x_tilde(j,1:frame_shift).*((2^23)-1), 'bit24');
         end
     end
     
@@ -217,7 +219,8 @@ while (1)
     
     l = l + 1;
 end
-mel_spectrum = feat_traj;
+mel_spectrum = feat_traj ./ max(max(feat_traj)) .* 0.9;
+mel_spectrum = mel_spectrum(:,1:end-2);
 save(['./tmp/tmp_melfeat.mat'], 'mel_spectrum'); %Store Activation trajectory
 
 fclose('all');

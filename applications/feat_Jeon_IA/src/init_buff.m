@@ -4,11 +4,15 @@ function [g]=init_buff(B_Mel_x, B_Mel_d, B_DFT_x, B_DFT_d, p)
 %set local parameters
 [n1,~] = size(B_Mel_x);
 [n2,~] = size(B_DFT_x);
+n1_unit = floor(n1 /  (2*p.Splice+1));
+n2_unit = floor(n2 /  (2*p.Splice+1));
 
 if strcmp(p.B_sep_mode, 'Mel')
     n_f = n1;
+    n_f_unit = n1_unit;
 else
     n_f = n2;
+    n_f_unit = n2_unit;
 end
 
 [~,R_d] = size(B_DFT_d);
@@ -25,6 +29,8 @@ g.Dm_Mel = zeros(p.NOISE_NUM,n1,m);
 g.Xm_hat = zeros(p.EVENT_NUM,n2,m);
 g.Dm_hat = zeros(p.NOISE_NUM,n2,m);
 g.Xm_tilde = zeros(n_f,m);
+g.Xm_sep_1d = zeros(n_f, m);
+g.Dm_sep_1d = zeros(n_f, m);
 
 g.x_tilde = zeros(sz, m);
 g.x_hat = zeros(p.EVENT_NUM,sz, m);

@@ -1,0 +1,15 @@
+??? Index exceeds matrix dimensions.
+
+Error in ==> C:\Documents and Settings\supervisor\HMMtoolbox\formato_lectura_secuencial.m
+On line 41  ==>                     vlt=vl{ic,ig}{ir}(:,agrup{ig}(ip):agrup{ig}(ip+1)-1);
+
+Error in ==> C:\Documents and Settings\supervisor\HMMtoolbox\DHMM.M
+On line 93  ==>     [lrep,lgrupo]=formato_lectura_secuencial(fptrain,'vtrain',agrup,'vtrainVQ');
+
+Error in ==> c:\documents and settings\supervisor\mis documentos\poligonos\train.m
+On line 57  ==>    dhmm('hmmpoligonos.mat','vtrain','vtest');
+
+pathtool;
+cd('C:\Documents and Settings\supervisor\Mis documentos\poligonos');
+pruebaHMM_diff
+train

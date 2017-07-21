@@ -1,15 +1,12 @@
 function [x_hat_i,d_hat_i, x_tilde, feat, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
 
-
 %% Global buffer initialize
-% Ym = g.Ym;
-% Yp = g.Yp;
+Ym = g.Ym;
+Yp = g.Yp;
 Xm_hat = g.Xm_hat;
 Dm_hat = g.Dm_hat;
 Xm_Mel = g.Xm_Mel;
 Dm_Mel = g.Dm_Mel;
-% BETA_blk = g.BETA_blk;
-% GAMMA_blk = g.GAMMA_blk;
 x_hat = g.x_hat;
 d_hat = g.d_hat;
 x_tilde = g.x_tilde;
@@ -21,12 +18,13 @@ B_DFT_d = g.B_DFT_d;
 Ad_blk = g.Ad_blk;
 A_d = g.A_d;
 lambda_d_blk = g.lambda_d_blk;
-
 lambda_dav = g.lambda_dav;
 lambda_Gy = g.lambda_Gy;
 l_mod_lswitch = g.l_mod_lswitch;
 Xm_tilde = g.Xm_tilde;
 r_blk = g.r_blk;
+Xm_sep_1d = g.Xm_sep_1d;
+Dm_sep_1d = g.Dm_sep_1d;
 
 %% set local parameters
 [n1,~] = size(B_Mel_d);
@@ -34,6 +32,11 @@ r_blk = g.r_blk;
 [n2,R_x] = size(B_DFT_x);
 n1_unit = floor(n1 /  (2*p.Splice+1));
 n2_unit = floor(n2 /  (2*p.Splice+1));
+if strcmp(p.B_sep_mode, 'Mel')
+    nf_unit = n1_unit;
+else
+    nf_unit = n2_unit;
+end
 r = R_x+R_d;
 m = p.blk_len_sep;
 h = p.blk_hop_sep;
@@ -44,23 +47,20 @@ splice = p.Splice;
 if blk_cnt > h
     blk_cnt = mod(blk_cnt,h);
 end
-% l = g.cnt; %Time frame index
-
 
 %% STFT
 y = filter([1 -p.preemph], 1, y);
 y = p.win_STFT .* y';
 y_pad = [y; zeros(fftlen-sz,1)];
 Y = fft(y_pad);
-Yp = angle(Y(1:fftlen2));
-Ym = abs(Y(1:fftlen2)) .^ p.pow;
+Yp_t = angle(Y(1:fftlen2));
+Ym_t = abs(Y(1:fftlen2)) .^ p.pow;
 
 %Set zero for LPF effect
 Ym(1:p.DCbin) = zeros(p.DCbin,1);
 
 %FIt zero to floor value
 Ym(:,1) = Ym(:,1) + p.nonzerofloor;
-
 
 %Block shift
 if m > 1
@@ -76,11 +76,12 @@ else
     Ym(1:n2-n2_unit,m) = Ym(1+n2_unit:n2,m);
     Yp(1:n2-n2_unit,m) = Yp(1+n2_unit:n2,m);
 end
-Ym(n2-n2_unit+1:n2,m) = Ym;
-Yp(n2-n2_unit+1:n2,m) = Yp;
+Ym(n2-n2_unit+1:n2,m) = Ym_t;
+Yp(n2-n2_unit+1:n2,m) = Yp_t;
 
 %Splice processing range after the separation
-splice_ext = (1+splice*fftlen2):(splice+1)*fftlen2;
+splice_ext_Mel = (1+splice*n1_unit):(splice+1)*n1_unit;
+splice_ext = (1+splice*n2_unit):(splice+1)*n2_unit;
 if blk_cnt==h
     
     %% Feature Frequency Scale Conversion (DFT to Mel)
@@ -129,16 +130,22 @@ if blk_cnt==h
     p.h_update_ind = true(r,1);
     %% Check Sparsity between Input and Basis
     if p.SparseCheck == 1
-        n_tmp = size(Y_sep,1);
+        Y_sep_t = Ym(splice_ext_Mel, :);
+        B_t = p.init_w(splice_ext_Mel, :);
+        n_tmp = size(Y_sep_t,1);
         SC_BandL = floor(p.SC_RatioL * n_tmp);
         SC_BandH = floor(p.SC_RatioH * n_tmp);
-        [Q_Y]= blk_sparse_single(Y_sep(SC_BandL:SC_BandH, :), p);
-        [Q_B]= blk_sparse_single(p.init_w(SC_BandL:SC_BandH, :), p);
+        [Q_Y]= blk_sparse_single(Y_sep_t(SC_BandL:SC_BandH, :), p);
+        [Q_B]= blk_sparse_single(B_t(SC_BandL:SC_BandH, :), p);
         Q_H = 1 - abs(Q_B' - Q_Y);
         simil_scale = Q_H .^ p.SC_pow;
         [~, A] = sparse_nmf_similarity(Y_sep, simil_scale, p);
     else
         [~, A] = sparse_nmf(Y_sep, p);
+    end
+    
+    if l <= p.init_N_len
+        A(1:R_x, :) = zeros(R_x, m) + eps;
     end
 
     %Multiclass separation (Event)
@@ -196,21 +203,18 @@ if blk_cnt==h
         Xm_sep = Xm_hat_sum;
         Dm_sep = Dm_hat_sum;
     end
-
-% %     %Get Ym_Mel_DFT
-% %     Ym_Mel_DFT = Ym;
-% %     if strcmp(p.B_sep_mode, 'Mel')
-% %         for k = 1 : p.Splice * 2 + 1
-% %             Ym_Mel_DFT(1+(k-1)*fftlen2 : k*fftlen2, :) = ...
-% %                 g.melmat'*shiftdim(Ym_Mel(1+(k-1)*n1_unit : k*n1_unit, :));
-% %         end
+    
+% %     %Smooth with previous supervector
+% %     if splice > 0
+% %         Xm_sep(1:end - nf_unit) = 0.5 * (Xm_sep(1:end - nf_unit) + Xm_sep_1d(nf_unit + 1 : end));
+% %         Dm_sep(1:end - nf_unit) = 0.5 * (Dm_sep(1:end - nf_unit) + Dm_sep_1d(nf_unit + 1 : end)); 
 % %     end
     
     %% Calculate Block Sparsity
     if p.blk_sparse
         [Q, r_blk]= blk_sparse(Xm_sep, Dm_sep, r_blk, l, p);
     else
-        Q = ones(n2_unit, m);
+        Q = ones(n1, m) .* 0.5;
     end
     
     %% 3) Enhancement Filter Construction
@@ -253,9 +257,16 @@ if blk_cnt==h
     
     if strcmp(p.B_sep_mode, 'Mel')
         if p.MelOut
-            Xm_tilde_out = g.melmat' * Xm_tilde;
+            for k = 1 : p.Splice * 2 + 1
+                Xm_tilde_out(1+(k-1)*fftlen2 : k*fftlen2, :) = ...
+                    g.melmat'*shiftdim(Xm_tilde(1+(k-1)*n1_unit : k*n1_unit, :));
+            end
         else
-            Xm_tilde_out = (g.melmat' * G) .* Ym;
+            for k = 1 : p.Splice * 2 + 1
+                Xm_tilde_out(1+(k-1)*fftlen2 : k*fftlen2, :) = ...
+                    g.melmat'*shiftdim(G(1+(k-1)*n1_unit : k*n1_unit, :));
+            end
+            Xm_tilde_out = Xm_tilde_out .* Ym;
         end
     else
         Xm_tilde_out = G.* Ym;
@@ -309,10 +320,14 @@ if blk_cnt==h
     %% 4) Adaptive basis training using enhanced spectrums
     Q_control = (1-mean(Q)) * p.Ar_up;
     %       disp(Q_control);
-    if p.adapt_train_N && ( Q_control*A_d_mag > A_x_mag)
+    if p.adapt_train_N && (( Q_control*A_d_mag > A_x_mag) || l <= p.init_N_len)
         
         if l <= p.init_N_len %Init condition
-            D_ref = Y_sep;
+            if l < p.Splice*2+1
+                D_ref = [repmat(Y_sep(end - l*nf_unit+1 : end - (l-1)*nf_unit), [p.Splice*2+1 - l, 1]); Y_sep(end - l*nf_unit+1 : end)];
+            else
+                D_ref = Y_sep;
+            end
         else
             M_ref =  (1-G);
 %             M_ref(1:p.DCbin) = zeros(p.DCbin,1) + p.nonzerofloor;
@@ -336,11 +351,6 @@ if blk_cnt==h
         if g.update_switch == floor(p.overlap_m_a * p.m_a)
             
             if strcmp(p.B_sep_mode, 'Mel')
-% %                 lambda_d_blk_Mel = zeros(n1, p.m_a);
-% %                 for k = 1 : p.Splice * 2 + 1
-% %                     lambda_d_blk_Mel(1+(k-1)*n1_unit : k*n1_unit, :) = ...
-% %                         g.melmat*shiftdim(lambda_d_blk(1+(k-1)*fftlen2 : k*fftlen2, :));
-% %                 end
                 B_Mel_d_up = B_Mel_d(:,1:p.R_a) .* repmat(r_up', [n1 1]);
                 B_Mel_d_up = B_Mel_d_up(:,any(B_Mel_d_up,1)); %Exclude all-zero columns
                 B_Mel_d_rem = B_Mel_d(:,1:p.R_a) .* repmat(r_up_inv', [n1 1]);
@@ -389,6 +399,11 @@ if blk_cnt==h
         end
     end
     
+%     %Smooth with previous supervector
+%     if splice > 0
+%         Xm_sep_1d = Xm_sep;
+%         Dm_sep_1d = Dm_sep;
+%     end
     blk_cnt = 0;
 end
 
@@ -422,7 +437,8 @@ g.B_DFT_d = B_DFT_d;
 g.A_d = A_d;
 g.Ad_blk = Ad_blk;
 g.lambda_d_blk = lambda_d_blk;
-
+g.Xm_sep_1d = Xm_sep_1d;
+g.Dm_sep_1d = Dm_sep_1d;
 
 g.lambda_dav = lambda_dav;
 g.lambda_Gy = lambda_Gy;

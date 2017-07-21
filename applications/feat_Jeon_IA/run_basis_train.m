@@ -5,13 +5,14 @@ addpath(genpath('toolbox/yaml'));
 
 B_DFT = zeros(p.F_DFT_order * (2*p.Splice+1), R * event_num);
 B_Mel = zeros(p.F_order * (2*p.Splice+1), R * event_num);
-A_DFT = 0;
-A_Mel = 0;
-A_DFT_tot = 0;
-A_Mel_tot = 0;
 DC_bin_set = floor(DC_freq_set ./ (p.fs / p.fftlength) + 0.5);
 s_sil = zeros(round(p.fs * p.sil_len), 1);
+
+A_DFT = 0;
+A_Mel = 0;
 for l = 1:event_num
+    A_DFT_tot = 0;
+    A_Mel_tot = 0;
     fexist = fopen(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis.mat']);
     if fexist == -1 || p.ForceRetrain
         disp(['------',num2str(l),'-th event train------']);
@@ -25,7 +26,7 @@ for l = 1:event_num
         s_len_cnt = 0;
         batch_cnt = 0;
         file_num = p.load_file_num;
-        if file_num == 0
+        if file_num > length(EventFileList) || file_num == 0
             file_num = length(EventFileList);
         end
         for i=1:file_num
@@ -111,18 +112,11 @@ for l = 1:event_num
                 m = size(TF_mag,2);
                 n = p.fftlength/2 + 1;
                 melmat = mel_matrix(p.fs, p.F_order, p.fftlength, 1, p.fs/2)'; %Get Mel Matrix
-                %     melmat_splice = repmat(melmat,2*p.Splice+1,2*p.Splice+1);
                 TF_Mel = zeros(p.F_order*(p.Splice * 2 + 1),m);
                 for k = 1 : p.Splice * 2 + 1
                     TF_Mel(1+(k-1)*p.F_order : k*p.F_order, :) = ...
                         melmat*TF_mag(1+(k-1)*n : k*n, :);
                 end
-                
-% %                 %Apply log-spectrogram
-% %                 if p.logspec == 1
-% %                     TF_mag = log(TF_mag);
-% %                     TF_Mel = log(TF_Mel);
-% %                 end
                 
                 if p.train_Exemplar == 0
                     p.w_update_ind = true(p.cluster_buff*R,1);
@@ -180,15 +174,15 @@ for l = 1:event_num
     
         B_DFT_sub = B_DFT_init;
         B_Mel_sub = B_Mel_init;
-%         A_DFT_sub = A_DFT_tot;
-%         A_Mel_sub = A_Mel_tot;
+        A_DFT_sub = A_DFT_tot;
+        A_Mel_sub = A_Mel_tot;
         
         save(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis.mat'],'B_DFT_sub', 'B_Mel_sub', 'p', '-v7.3');
-%         save(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
+        save(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
     else
         p_org = p;
         load(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis.mat']);
-%         load(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation.mat']);
+        load(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation.mat']);
 
         p = p_org; 
     end
@@ -201,6 +195,8 @@ for l = 1:event_num
     end
     
     if p.train_MLD == 1
+        A_DFT_tot = 0;
+        A_Mel_tot = 0;
         fexist = fopen(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat']);
         if fexist == -1 || p.ForceRetrain_MLD
             disp(['------',num2str(l),'-th event train (MLD)------']);
@@ -283,26 +279,28 @@ for l = 1:event_num
             
             B_DFT_sub = B_DFT_MLD;
             B_Mel_sub = B_Mel_MLD;
+            A_DFT_sub = A_DFT_tot;
+            A_Mel_sub = A_Mel_tot;
             save(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat'],'B_DFT_sub', 'B_Mel_sub', 'p', '-v7.3');
-            %         save(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
+            save(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
         else
             p_org = p;
             load(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat']);
-            %         load(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat']);
+            load(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat']);
             
             p = p_org;
         end
     end
     
-    B_Mel(:,1 + (l-1)*R : l*R) = B_Mel_sub;
-    B_DFT(:,1 + (l-1)*R : l*R) = B_DFT_sub;
-%     if A_DFT == 0
-%         A_DFT = A_DFT_sub;
-%         A_Mel = A_Mel_sub;
-%     else
-%         A_DFT = [A_DFT; A_DFT_sub];
-%         A_Mel = [A_Mel; A_Mel_sub];
-%     end
+% %     B_Mel(:,1 + (l-1)*R : l*R) = B_Mel_sub;
+% %     B_DFT(:,1 + (l-1)*R : l*R) = B_DFT_sub;
+% %     if A_DFT == 0
+% %         A_DFT = A_DFT_sub;
+% %         A_Mel = A_Mel_sub;
+% %     else
+% %         A_DFT = [A_DFT; A_DFT_sub];
+% %         A_Mel = [A_Mel; A_Mel_sub];
+% %     end
     
 
 end

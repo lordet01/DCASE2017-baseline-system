@@ -83,3 +83,7 @@ tests/material/saved.yaml
 applications/feat_Jeon_IA/basis_Rx40_Rd100/event_glassbreak/desktop.ini
 *.mat
 *.ini
+*.cpickle
+*.asv
+*.asv
+applications/feat_Jeon_IA/settings/SED_initial_setting_SNMF.asv

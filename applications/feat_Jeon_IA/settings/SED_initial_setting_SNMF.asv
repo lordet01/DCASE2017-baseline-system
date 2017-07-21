@@ -42,13 +42,12 @@ p.train_Exemplar = 0; %train with SNMF if 0
 p.train_MLD = 1; %Retrain Bases with MLD
 p.cluster_buff = 1; %Maximum rank scale before clustering (1: Turn off clustering)
 p.train_seq_len_max = ceil(p.fs * 720); %12 min
-p.load_file_num = 0; %set only for debug, 0 for load every files in a folder
+p.load_file_num = 130; %set only for debug, 0 for load every files in a folder
 p.sil_len = 0.5; %minimum length of silence between sub-event. (s)
 
-
 %% Basis update option (Online Dictionary Learning, ODL, Interspeech 16, K. M. Jeon)
-p.adapt_train_N =1;
-p.init_N_len = 100; %No. of initial frames used for nosie basis update
+p.adapt_train_N = 1;
+p.init_N_len = 20; %No. of initial frames used for nosie basis update
 p.R_a = floor(0.5 * p.R_d);
 p.m_a = 100; %No. of stacked block for basis adaptation
 p.overlap_m_a = 0.01; %Update cycle for noise learning
@@ -60,10 +59,12 @@ p.R_semi = floor(0.1 * p.R_d);
  
 %% Sparsity-Based Similarity Check between Input and Basis (17, K. M. Jeon)
 p.SparseCheck = 1;
-p.
+p.SC_RatioL = 0.1;
+p.SC_RatioH = 0.95;
+p.SC_pow = 2;
 
 %% Block sparsity options (Block Sparsity Measure for ODL, DSP 17, K. M. Jeon)
-p.blk_sparse = 1; %block sparsity switch
+p.blk_sparse = 0; %block sparsity switch
 p.P_len_k = 8; % vertical (frequency bin) size of Block for local sparsity calculation
 p.P_len_l = 6; % horizental (time frame index) size of Block for local sparsity calculation
 % p.kappa = 1.0;
@@ -109,6 +110,7 @@ p.filegap = p.ch; %No. of file consisting one session
 p.separation = 1;
 p.B_sep_mode = 'Mel'; %['DFT', 'Mel']
 p.MelConv = 1; %Use frequency scale conversion. 00: Coupled dictionary
+p.MelOut = 1; %Use Mel spectrum at synthesizing wavform
 p.train_VAD = 0;
 p.train_ANOT = 0;
 
@@ -129,9 +131,9 @@ p.est_scale = 1.0;
 %Single channel enhancement options
 p.ENHANCE_METHOD = 'MMSE'; %['Wiener', 'MMSE']
 %2.1) Parameters of "Decision-Directed" a Priori SNR Estimate
-p.alpha_eta=0.05;	% Recursive averaging parameter
+p.alpha_eta=0.1;	% Recursive averaging parameter
 p.eta_min=10^(-18/10);	% Lower limit constraint
-p.alpha_d = 0.95; % Recursive averaging parameter for the noise
+p.alpha_d = 0.99; % Recursive averaging parameter for the noise
 p.G_floor = 0.006;
 p.G_beta = 1.0; %Bias compensation factor in the noise estimator
 p.G_beta_max = 1000.0;

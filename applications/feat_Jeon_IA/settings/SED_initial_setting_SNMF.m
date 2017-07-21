@@ -42,13 +42,12 @@ p.train_Exemplar = 0; %train with SNMF if 0
 p.train_MLD = 1; %Retrain Bases with MLD
 p.cluster_buff = 1; %Maximum rank scale before clustering (1: Turn off clustering)
 p.train_seq_len_max = ceil(p.fs * 720); %12 min
-p.load_file_num = 0; %set only for debug, 0 for load every files in a folder
+p.load_file_num = 130; %set only for debug, 0 for load every files in a folder
 p.sil_len = 0.5; %minimum length of silence between sub-event. (s)
 
-
 %% Basis update option (Online Dictionary Learning, ODL, Interspeech 16, K. M. Jeon)
-p.adapt_train_N =1;
-p.init_N_len = 15; %No. of initial frames used for nosie basis update
+p.adapt_train_N = 1;
+p.init_N_len = 20; %No. of initial frames used for nosie basis update
 p.R_a = floor(0.5 * p.R_d);
 p.m_a = 100; %No. of stacked block for basis adaptation
 p.overlap_m_a = 0.01; %Update cycle for noise learning
@@ -60,12 +59,12 @@ p.R_semi = floor(0.1 * p.R_d);
  
 %% Sparsity-Based Similarity Check between Input and Basis (17, K. M. Jeon)
 p.SparseCheck = 1;
-p.SC_RatioL = 0.08;
+p.SC_RatioL = 0.1;
 p.SC_RatioH = 0.95;
 p.SC_pow = 2;
 
 %% Block sparsity options (Block Sparsity Measure for ODL, DSP 17, K. M. Jeon)
-p.blk_sparse = 1; %block sparsity switch
+p.blk_sparse = 0; %block sparsity switch
 p.P_len_k = 8; % vertical (frequency bin) size of Block for local sparsity calculation
 p.P_len_l = 6; % horizental (time frame index) size of Block for local sparsity calculation
 % p.kappa = 1.0;
