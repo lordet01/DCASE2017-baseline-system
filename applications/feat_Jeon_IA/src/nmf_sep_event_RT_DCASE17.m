@@ -142,7 +142,7 @@ if blk_cnt==h
         [Q_B]= blk_sparse_single(B_t(SC_BandL:SC_BandH, :), p);
         Q_H = 1 - abs(Q_B' - Q_Y);
         simil_scale = Q_H .^ p.SC_pow;
-        p.h_weight = p.h_weight * simil_scale;
+        p.h_weight = simil_scale;
     end
         
     [~, A] = sparse_nmf(Y_sep, p);
@@ -155,8 +155,8 @@ if blk_cnt==h
         %                 disp(loglik);
         post_prob = p.emismat' * alpha(:,end);
         post_prob_e = kron(post_prob(1:p.R_Dict,:), ones(p.R_c,1));
-        post_prob_d = kron(post_prob(p.R_Dict+1,:), ones(R_d,1));
-        transit_weight = mk_stochastic([post_prob_e; post_prob_d]);
+%         post_prob_d = kron(post_prob(p.R_Dict+1,:), ones(R_d,1));
+        transit_weight = mk_stochastic([post_prob_e]);
         
         if mean(p.init_w(:,1:p.R_x) * A(1:p.R_x,:)) <= mean(p.init_w(:,p.R_x+1:end) * A(p.R_x+1:end, :)) * 0.1
             dict_seq_now = p.R_Dict + 1; %Set Silence observation
@@ -165,7 +165,7 @@ if blk_cnt==h
         end
         dict_seq = [dict_seq(2:end), dict_seq_now];
         
-        A(1:end, :) = A(1:end, :) .* transit_weight.* (loglik).^2;
+        A(1:R_x, :) = A(1:R_x, :) .* transit_weight.* (loglik).^2;
     end
     
     if l <= p.init_N_len

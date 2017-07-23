@@ -51,7 +51,7 @@ p.Q = 3; %Number of state per a event
 
 %% Basis update option (Online Dictionary Learning, ODL, Interspeech 16, K. M. Jeon)
 p.adapt_train_N = 1;
-p.init_N_len = 100; %No. of initial frames used for nosie basis update
+p.init_N_len = 10; %No. of initial frames used for nosie basis update
 p.R_a = floor(0.5 * p.R_d);
 p.m_a = 100; %No. of stacked block for basis adaptation
 p.overlap_m_a = 0.01; %Update cycle for noise learning
