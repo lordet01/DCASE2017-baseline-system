@@ -1,4 +1,4 @@
-function [loglik, errors] = dhmm_logprob(data, prior, transmat, obsmat)
+function [loglik, errors, alpha, beta, gamma] = dhmm_logprob(data, prior, transmat, obsmat)
 % LOG_LIK_DHMM Compute the log-likelihood of a dataset using a discrete HMM
 % [loglik, errors] = log_lik_dhmm(data, prior, transmat, obsmat)
 %

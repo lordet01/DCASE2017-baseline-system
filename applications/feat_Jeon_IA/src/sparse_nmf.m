@@ -1,6 +1,6 @@
 function [w, h, objective] = sparse_nmf(v, p)
 
-% SPARSE_NMF Sparse NMF with beta-divergence reconstruction error, 
+% SPARSE_NMF Sparse NMF with beta-divergence reconstruction error,
 % L1 sparsity constraint, optimization in normalized basis vector space.
 %
 % [w, h, objective] = sparse_nmf(v, p)
@@ -15,12 +15,12 @@ function [w, h, objective] = sparse_nmf(v, p)
 %               'kl': Euclidean distance
 %     sparsity: weight for the L1 sparsity penalty (default: 0)
 %     max_iter: maximum number of iterations (default: 100)
-%     conv_eps: threshold for early stopping (default: 0, 
+%     conv_eps: threshold for early stopping (default: 0,
 %                                             i.e., no early stopping)
 %     display:  display evolution of objective function (default: 0)
-%     random_seed: set the random seed to the given value 
+%     random_seed: set the random seed to the given value
 %                   (default: 1; if equal to 0, seed is not set)
-%     init_w:   initial setting for W (default: random; 
+%     init_w:   initial setting for W (default: random;
 %                                      either init_w or r have to be set)
 %     r:        # basis functions (default: based on init_w's size;
 %                                  either init_w or r have to be set)
@@ -35,22 +35,22 @@ function [w, h, objective] = sparse_nmf(v, p)
 %
 %
 %
-% References: 
+% References:
 % J. Eggert and E. Korner, "Sparse coding and NMF," 2004
-% P. D. O'Grady and B. A. Pearlmutter, "Discovering Speech Phones 
+% P. D. O'Grady and B. A. Pearlmutter, "Discovering Speech Phones
 %   Using Convolutive Non-negative Matrix Factorisation
 %   with a Sparseness Constraint," 2008
-% J. Le Roux, J. R. Hershey, F. Weninger, "Sparse NMF ? half-baked or well 
+% J. Le Roux, J. R. Hershey, F. Weninger, "Sparse NMF ? half-baked or well
 %   done?," 2015
 %
 % This implementation follows the derivations in:
-% J. Le Roux, J. R. Hershey, F. Weninger, 
-% "Sparse NMF ? half-baked or well done?," 
+% J. Le Roux, J. R. Hershey, F. Weninger,
+% "Sparse NMF ? half-baked or well done?,"
 % MERL Technical Report, TR2015-023, March 2015
 %
 % If you use this code, please cite:
-% J. Le Roux, J. R. Hershey, F. Weninger, 
-% "Sparse NMF ? half-baked or well done?," 
+% J. Le Roux, J. R. Hershey, F. Weninger,
+% "Sparse NMF ? half-baked or well done?,"
 % MERL Technical Report, TR2015-023, March 2015
 %   @TechRep{LeRoux2015mar,
 %     author = {{Le Roux}, J. and Hershey, J. R. and Weninger, F.},
@@ -65,7 +65,7 @@ function [w, h, objective] = sparse_nmf(v, p)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %   Copyright (C) 2015 Mitsubishi Electric Research Labs (Jonathan Le Roux,
 %                                         Felix Weninger, John R. Hershey)
-%   Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0) 
+%   Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 str =[];
 m = size(v, 1);
@@ -85,9 +85,8 @@ if ~isfield(p, 'random_seed')
 end
 
 if ~isfield(p, 'sparsity')
-    p.sparsity = 0;
+    p.sparsity = 5;
 end
-
 if ~isfield(p, 'conv_eps')
     p.conv_eps = 0;
 end
@@ -122,12 +121,20 @@ if ~isfield(p, 'init_w')
 else
     ri = size(p.init_w, 2);
     w(:, 1:ri) = p.init_w;
-%     if isfield(p, 'r') && ri < p.r
-%         w(:, (ri + 1) : p.r) = rand(m, p.r - ri);
-%         r = p.r;
-%     else
-        r = ri;
-%     end
+    %     if isfield(p, 'r') && ri < p.r
+    %         w(:, (ri + 1) : p.r) = rand(m, p.r - ri);
+    %         r = p.r;
+    %     else
+    r = ri;
+    %     end
+end
+
+if p.train_MLD == 1
+    const_MLD_h = zeros(r, n); %Buffer initialization
+    r_c = p.R_c;
+    c_num = floor(r / r_c);
+    h_l1 = zeros(c_num, n);
+    h_l1_span = zeros(r, n);
 end
 
 if ~isfield(p, 'init_h')
@@ -159,7 +166,16 @@ wn = sqrt(sum(w.^2));
 w  = bsxfun(@rdivide,w,wn);
 h  = bsxfun(@times,  h,wn');
 
-if ~isfield(p, 'display') 
+
+% Initialization of GPU Memories
+if p.NMF_GPU == 1
+    fprintf(1,'Dumping Memories to GPU\n');
+    w = gpuArray(w);
+    h = gpuArray(h);
+    dph = gpuArray.zeros(r, n);
+    dmh = gpuArray.zeros(r, n);
+end
+if ~isfield(p, 'display')
     p.display = 0;
 end
 
@@ -193,6 +209,18 @@ for it = 1:p.max_iter
                 dph = max(dph, flr);
                 dmh = w(:, h_ind)' * (v ./ lambda);
                 h(h_ind, :) = bsxfun(@rdivide, h(h_ind, :) .* dmh, dph);
+            
+                if p.train_MLD == 1
+                    for g = 1:c_num
+                        h_l1(g,:) = sum(h((g-1)*r_c+1 : g*r_c, :), 1);
+                    end
+                    h_l1_span(1:c_num*r_c, :) = kron(h_l1, ones(r_c,1));
+                    if length(h_l1_span) < r
+                        h_l1_span(r,:) = h_l1_span(r-1,:); 
+                    end
+                    const_MLD_h(h_ind, :) = (1 + p.sparsity ./ (p.sparsity_epsilon + h_l1_span(h_ind, :)));
+                    h(h_ind, :) = h(h_ind, :) ./ const_MLD_h(h_ind, :);
+                end
             case 2
                 dph = w(:, h_ind)' * lambda + p.sparsity;
                 dph = max(dph, flr);
@@ -202,11 +230,13 @@ for it = 1:p.max_iter
                 dph = w(:, h_ind)' * lambda.^(div_beta - 1) + p.sparsity;
                 dph = max(dph, flr);
                 dmh = w(:, h_ind)' * (v .* lambda.^(div_beta - 2));
-                h(h_ind, :) = h(h_ind, :) .* dmh ./ dph;                
+                h(h_ind, :) = h(h_ind, :) .* dmh ./ dph;
         end
+        
+        h = h .* p.h_weight;
         lambda = max(w * h, flr);
     end
-
+    
     
     % W updates
     if update_w > 0
@@ -251,7 +281,7 @@ for it = 1:p.max_iter
         case 2
             div = sum(sum((v - lambda) .^ 2));
         case 0
-            div = sum(sum(v ./ lambda - log ( v ./ lambda) - 1)); 
+            div = sum(sum(v ./ lambda - log ( v ./ lambda) - 1));
         otherwise
             div = sum(sum(v.^div_beta + (div_beta - 1)*lambda.^div_beta ...
                 - div_beta * v .* lambda.^(div_beta - 1))) / (div_beta * (div_beta - 1));
@@ -259,16 +289,16 @@ for it = 1:p.max_iter
     
     if p.cost_check
         cost = div + sum(sum(p.sparsity .* h));
-
+        
         objective.div(it)  = div;
         objective.cost(it) = cost;
-
+        
         if p.display ~= 0
             fprintf(repmat('\b',1,length(str)));
             str = sprintf('iteration %d div = %.3e cost = %.3e', it, div, cost);
             fprintf('%s', str);
         end
-
+        
         % Convergence check
         if it > 1 && p.conv_eps > 0
             e = abs(cost - last_cost) / last_cost;
@@ -289,4 +319,9 @@ if p.display ~= 0
     disp('\nMax Iteration reached, aborting iteration\n');
 end
 
+if p.NMF_GPU == 1
+    fprintf(1,'Take results from GPU memory\n');
+    w = gather(w);
+    h = gather(h);
+end
 end

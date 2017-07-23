@@ -8,8 +8,8 @@
 
 
 tic;
-in_path = './wav_sample/16bit';
-out_path = [in_path,'/proc_splice_prop_rev'];
+in_path = './wav_sample/32bit';
+out_path = [in_path,'/proc_0724_HMM'];
 mkdir(out_path);
 
 

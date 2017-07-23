@@ -22,7 +22,8 @@ B_DFT_x_buff = zeros(n2, p.R_x * (K-1));
 k_idx = 1;
 for k = 1:K
     name = event_list{k};
-    load(['basis/event_',name,'/event_',name,'_Basis',opt_MLD,'.mat']);
+    load(['basis_HMM/event_',name,'/event_',name,'_HMM','.mat']);
+    load(['basis_HMM/event_',name,'/event_',name,'_Basis',opt_MLD,'.mat']);
     
     if strcmp(event_target, name)
         B_DFT_x = B_DFT_sub; B_Mel_x = B_Mel_sub;
@@ -33,7 +34,7 @@ for k = 1:K
 end
 
 %% Load bgn basis
-load(['basis/bgn_DCASE2017/bgn_DCASE2017_Basis.mat']);
+load(['basis_HMM/bgn_DCASE2017/bgn_DCASE2017_Basis.mat']);
 B_DFT_d = B_DFT_sub; B_Mel_d = B_Mel_sub;
 
 %% Structured Noise Basis Organization {ODL, BGN, NonTarget Event}
@@ -44,6 +45,13 @@ if p.adapt_train_N == 1
 end
 
 SED_initial_setting_SNMF;
+
+%% Add HMM Parameters to global buffer
+if p.TransitionCheck == 1
+    p.prior = prior;
+    p.transmat = transmat;
+    p.emismat = emismat;
+end
 
 %% Clear event-wise buffer
 try
@@ -71,7 +79,7 @@ B2_x = B_DFT_x; B2_d = B_DFT_d;
 
 ch = p.ch;
 
-%multichannel file I/O initialization
+%Multichannel file I/O initialization
 for j = 1:ch
     fin(j) = fopen([path_in(j,:)],'rb');
 end

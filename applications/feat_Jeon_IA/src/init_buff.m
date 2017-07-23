@@ -56,6 +56,9 @@ if strcmp(p.B_sep_mode, 'Mel')
     g.melmat = mel_matrix(p.fs, p.F_order, p.fftlength, 1, p.fs/2)'; %Get Mel Matrix
 end
 
+% buff for HMM transition
+g.dict_seq = ones(1, p.Dict_Buff).*(p.R_Dict+1);
+
 %% Experimental buffers
 if p.r_q_analsys == 1
     g.r_q = 0;

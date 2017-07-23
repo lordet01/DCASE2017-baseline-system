@@ -1,4 +1,4 @@
-function [B_DFT, B_Mel, A_DFT, A_Mel, p_out] = run_basis_train(DB_path, DC_freq_set, VAD_set, event_num, B_name_full, R, p)
+function [B_DFT, B_Mel, A_DFT, A_Mel, p_out] = run_basis_train(dir_Basis, DB_path, DC_freq_set, VAD_set, event_num, B_name_full, R, p)
 
 addpath('src');
 addpath(genpath('toolbox/yaml')); 
@@ -13,7 +13,7 @@ A_Mel = 0;
 for l = 1:event_num
     A_DFT_tot = 0;
     A_Mel_tot = 0;
-    fexist = fopen(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis.mat']);
+    fexist = fopen([dir_Basis, '/',B_name_full{l},'/', B_name_full{l},'_Basis.mat']);
     if fexist == -1 || p.ForceRetrain
         disp(['------',num2str(l),'-th event train------']);
         
@@ -29,11 +29,12 @@ for l = 1:event_num
         if file_num > length(EventFileList) || file_num == 0
             file_num = length(EventFileList);
         end
+        
         for i=1:file_num
             [filename, ext] = strtok(EventFileList(i).name, '.');
             disp(['Training:', filename]);
             event = [DB_path{l},'/',filename, ext];
-            [s, fs_s] = audioread(event);
+            [s, fs_s] = wavread(event);
             
             %Normalize sampling frequency and channel to system default
             s = mean(s,2); %Downmix to mono channel
@@ -88,7 +89,6 @@ for l = 1:event_num
             %Normalize sub-wav clip
             s = s ./ sqrt(var(s));
             s = s ./ max(abs(s)) .* 30000;
-            s = s + 1; %non-zero flooring of silence
             s_len = length(s);
             if s_len >  p.train_seq_len_max
                s = s(1:p.train_seq_len_max); 
@@ -98,9 +98,12 @@ for l = 1:event_num
             
             s_len_cnt = s_len_cnt + s_len;
             if s_len_cnt >= p.train_seq_len_max || i == file_num
-                
                 s_full = [s_full(1:p.train_seq_len_max, 1); s_sil];
-                
+                if s_len_cnt <= p.train_seq_len_max
+                    s_full = [s_full(1:s_len_cnt, 1); s_sil];
+                end
+                s_full = s_full + 1;
+                    
               %% Extract feature for NMF
                 %Feature1: DFT Magnitude
                 [TF_mag, ~] = stft_fft(s_full, p.framelength, p.frameshift, p.fftlength, DC_bin_set(l), p.win_STFT, p.preemph);
@@ -118,12 +121,12 @@ for l = 1:event_num
                         melmat*TF_mag(1+(k-1)*n : k*n, :);
                 end
                 
+              %% Train NMF Parameters
                 if p.train_Exemplar == 0
                     p.w_update_ind = true(p.cluster_buff*R,1);
                     p.h_update_ind = true(p.cluster_buff*R,1);
                     if batch_cnt > 0
                         p.init_w = B_DFT_init; %Given from Exemplar basis as initialization
-                        p.init_h = A_DFT_init; %Given from Exemplar basis as initialization
                     else
                         p.r = R;
                     end
@@ -136,7 +139,6 @@ for l = 1:event_num
                     
                     if batch_cnt > 0
                         p.init_w = B_Mel_init; %Given from Exemplar basis as initialization
-                        p.init_h = A_Mel_init; %Given from Exemplar basis as initialization
                     else
                         p.r = R;
                     end
@@ -155,13 +157,10 @@ for l = 1:event_num
                     A_Mel_init = 0;
                 end
                 batch_cnt = batch_cnt + 1;
-                wavwrite(s_full./32767, p.fs, ['basis/',B_name_full{l},'/', B_name_full{l},'_train_batch',num2str(batch_cnt),'.wav']);
+                wavwrite(s_full./32767, p.fs, [dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_train_batch',num2str(batch_cnt),'.wav']);
                 s_full = zeros(p.train_seq_len_max,1);
                 s_len_cnt = 0;
                 
-% % %                 if batch_cnt == p.batch_num %Limit data number to be trained
-% % %                     break;
-% % %                 end
             end
         end
         clear('s_full');
@@ -177,16 +176,15 @@ for l = 1:event_num
         A_DFT_sub = A_DFT_tot;
         A_Mel_sub = A_Mel_tot;
         
-        save(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis.mat'],'B_DFT_sub', 'B_Mel_sub', 'p', '-v7.3');
-        save(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
+        save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Basis.mat'],'B_DFT_sub', 'B_Mel_sub', 'p', '-v7.3');
+        save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Activation.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
     else
         p_org = p;
-        load(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis.mat']);
-        load(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation.mat']);
+        load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Basis.mat']);
+        load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Activation.mat']);
 
         p = p_org; 
     end
-    
     
    %% Clear event-wise buffer
     try
@@ -197,7 +195,7 @@ for l = 1:event_num
     if p.train_MLD == 1
         A_DFT_tot = 0;
         A_Mel_tot = 0;
-        fexist = fopen(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat']);
+        fexist = fopen([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat']);
         if fexist == -1 || p.ForceRetrain_MLD
             disp(['------',num2str(l),'-th event train (MLD)------']);
             
@@ -220,10 +218,10 @@ for l = 1:event_num
             C_Mel = kron(C_Mel, ones(1, p.R_c)); %Span to match size with W
             
            %% Retrain batch spectrograms with SNMF_MLD
-            BatchFileList = dir(['basis/',B_name_full{l},'/*.wav']);
+            BatchFileList = dir([dir_Basis,'/',B_name_full{l},'/*.wav']);
             for batch_cnt = 1:length(BatchFileList)
                 
-                s_full = audioread(['basis/',B_name_full{l},'/', B_name_full{l},'_train_batch',num2str(batch_cnt),'.wav']); 
+                s_full = wavread([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_train_batch',num2str(batch_cnt),'.wav']); 
             
                 %Feature1: DFT Magnitude
                 [TF_mag, ~] = stft_fft(s_full, p.framelength, p.frameshift, p.fftlength, DC_bin_set(l), p.win_STFT, p.preemph);
@@ -246,7 +244,6 @@ for l = 1:event_num
                 p.h_update_ind = true(p.cluster_buff*R,1);
                 if batch_cnt > 1
                     p.init_w = B_DFT_MLD; %Given from Exemplar basis as initialization
-                    p.init_h = A_DFT_MLD; %Given from Exemplar basis as initialization
                 else
                     p.r = R;
                 end
@@ -259,7 +256,6 @@ for l = 1:event_num
                 
                 if batch_cnt > 1
                     p.init_w = B_Mel_MLD; %Given from Exemplar basis as initialization
-                    p.init_h = A_Mel_MLD; %Given from Exemplar basis as initialization
                 else
                     p.r = R;
                 end
@@ -281,28 +277,31 @@ for l = 1:event_num
             B_Mel_sub = B_Mel_MLD;
             A_DFT_sub = A_DFT_tot;
             A_Mel_sub = A_Mel_tot;
-            save(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat'],'B_DFT_sub', 'B_Mel_sub', 'p', '-v7.3');
-            save(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
+            save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat'],'B_DFT_sub', 'B_Mel_sub', 'p', '-v7.3');
+            save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat'],'A_DFT_sub', 'A_Mel_sub', 'p', '-v7.3');
         else
             p_org = p;
-            load(['basis/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat']);
-            load(['basis/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat']);
+            load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Basis_MLD.mat']);
+            load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Activation_MLD.mat']);
             
             p = p_org;
         end
     end
     
-% %     B_Mel(:,1 + (l-1)*R : l*R) = B_Mel_sub;
-% %     B_DFT(:,1 + (l-1)*R : l*R) = B_DFT_sub;
-% %     if A_DFT == 0
-% %         A_DFT = A_DFT_sub;
-% %         A_Mel = A_Mel_sub;
-% %     else
-% %         A_DFT = [A_DFT; A_DFT_sub];
-% %         A_Mel = [A_Mel; A_Mel_sub];
-% %     end
-    
-
+    if p.train_HMM_NMF
+        fexist = fopen([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat']);
+        if fexist == -1 || p.ForceRetrain_MLD
+            disp(['------',num2str(l),'-th event train (HMM)------']);
+            [~, dict_seq] = max(A_Mel_sub); dict_seq = round(dict_seq * 0.5);
+            idx_sil = mean(B_Mel_sub * A_Mel_sub) <= 0.00001 .* mean(mean(B_Mel_sub * A_Mel_sub));
+            dict_seq(idx_sil) = p.R_Dict + 1; %Set Silence observation
+            [prior, transmat, emismat] = init_HMM(dict_seq, p.Q, p.R_Dict + 1);
+            
+             save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat'],'prior', 'transmat', 'emismat', '-v7.3');
+        else
+             load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat']);
+        end
+    end
 end
 
 p_out = p;

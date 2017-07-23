@@ -25,6 +25,7 @@ Xm_tilde = g.Xm_tilde;
 r_blk = g.r_blk;
 Xm_sep_1d = g.Xm_sep_1d;
 Dm_sep_1d = g.Dm_sep_1d;
+dict_seq = g.dict_seq;
 
 %% set local parameters
 [n1,~] = size(B_Mel_d);
@@ -128,6 +129,8 @@ if blk_cnt==h
     end
     
     p.h_update_ind = true(r,1);
+    p.h_weight = 1;
+    
     %% Check Sparsity between Input and Basis
     if p.SparseCheck == 1
         Y_sep_t = Ym(splice_ext_Mel, :);
@@ -139,9 +142,30 @@ if blk_cnt==h
         [Q_B]= blk_sparse_single(B_t(SC_BandL:SC_BandH, :), p);
         Q_H = 1 - abs(Q_B' - Q_Y);
         simil_scale = Q_H .^ p.SC_pow;
-        [~, A] = sparse_nmf_similarity(Y_sep, simil_scale, p);
-    else
-        [~, A] = sparse_nmf(Y_sep, p);
+        p.h_weight = p.h_weight * simil_scale;
+    end
+        
+    [~, A] = sparse_nmf(Y_sep, p);
+    
+    %% Gives time-transition constraint to activation
+    if p.TransitionCheck == 1
+        
+        [loglik, ~, alpha, ~] = dhmm_logprob(dict_seq, p.prior, p.transmat, p.emismat);
+        
+        %                 disp(loglik);
+        post_prob = p.emismat' * alpha(:,end);
+        post_prob_e = kron(post_prob(1:p.R_Dict,:), ones(p.R_c,1));
+        post_prob_d = kron(post_prob(p.R_Dict+1,:), ones(R_d,1));
+        transit_weight = mk_stochastic([post_prob_e; post_prob_d]);
+        
+        if mean(p.init_w(:,1:p.R_x) * A(1:p.R_x,:)) <= mean(p.init_w(:,p.R_x+1:end) * A(p.R_x+1:end, :)) * 0.1
+            dict_seq_now = p.R_Dict + 1; %Set Silence observation
+        else
+            [~, dict_seq_now] = max(A(1:p.R_x,:)); dict_seq_now = round(dict_seq_now * 0.5);
+        end
+        dict_seq = [dict_seq(2:end), dict_seq_now];
+        
+        A(1:end, :) = A(1:end, :) .* transit_weight.* (loglik).^2;
     end
     
     if l <= p.init_N_len
@@ -445,6 +469,7 @@ g.lambda_Gy = lambda_Gy;
 g.l_mod_lswitch = l_mod_lswitch;
 g.Xm_tilde = Xm_tilde;
 g.r_blk = r_blk;
+g.dict_seq = dict_seq;
 
 % % % %Experimental function (Scatter plot between 1/r and q in Fig. 2 of Signal
 % % % %Processing Letter, kmjeon, 2017-03-13

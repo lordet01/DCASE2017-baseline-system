@@ -5,9 +5,10 @@ global p;
 % p.NMF_algorithm = 'PMWF'; %PMWF with NE based on second order statistics
 p.NMF_algorithm = 'SNMF';
 p.useGPU = 0;
-p.ForceRewrite = 1; %Forcely rewrite output file
+p.ForceRewrite = 0; %Forcely rewrite output file
 p.ForceRetrain = 0; %Forcely retrain bases
 p.ForceRetrain_MLD = 0; %Forcely retrain bases only for MLD
+p.ForceRetrain_HMM = 0;
 
 % BNMF block
 p.blk_len_sep=1;
@@ -33,8 +34,9 @@ p.pow = 2; %Power coefficient: [1: Mag., 2: Pow]
 
 % NMF parameters
 p.R_c = 2; %Unit rank of spectral cone
-p.R_x = p.R_c * 5;
-p.R_d = p.R_c * 5;
+p.R_Dict = 5;
+p.R_x = p.R_c * p.R_Dict;
+p.R_d = p.R_c * p.R_Dict;
 p.nonzerofloor = 1e-9;
 
 %% Basis Training parameters (Mixture of Learned Dictionary, MLD, Sig.Proc. Lett. 15, M. Kim)
@@ -44,10 +46,12 @@ p.cluster_buff = 1; %Maximum rank scale before clustering (1: Turn off clusterin
 p.train_seq_len_max = ceil(p.fs * 720); %12 min
 p.load_file_num = 130; %set only for debug, 0 for load every files in a folder
 p.sil_len = 0.5; %minimum length of silence between sub-event. (s)
+p.train_HMM_NMF = 1;
+p.Q = 3; %Number of state per a event
 
 %% Basis update option (Online Dictionary Learning, ODL, Interspeech 16, K. M. Jeon)
 p.adapt_train_N = 1;
-p.init_N_len = 20; %No. of initial frames used for nosie basis update
+p.init_N_len = 100; %No. of initial frames used for nosie basis update
 p.R_a = floor(0.5 * p.R_d);
 p.m_a = 100; %No. of stacked block for basis adaptation
 p.overlap_m_a = 0.01; %Update cycle for noise learning
@@ -62,6 +66,10 @@ p.SparseCheck = 1;
 p.SC_RatioL = 0.1;
 p.SC_RatioH = 0.95;
 p.SC_pow = 2;
+
+%% HMM-Based time transition Check from the past N frames (17, K. M. Jeon)
+p.TransitionCheck = 1;
+p.Dict_Buff = 100; 
 
 %% Block sparsity options (Block Sparsity Measure for ODL, DSP 17, K. M. Jeon)
 p.blk_sparse = 0; %block sparsity switch
@@ -116,9 +124,10 @@ p.train_ANOT = 0;
 
 
 %SNMF parameters
+p.NMF_GPU = 0;
 p.cf = 'kl';   %  'is', 'kl', 'ed'; takes precedence over setting the beta value
 p.sparsity = 5; %Activation sparsity constraint
-p.sparsity_eta = 10000; %Cone clustering constraint (Higher: Compacter cone size)
+p.sparsity_eta = 0.1; %Cone clustering constraint (Higher: Compacter cone size)
 p.sparsity_epsilon = 0.00001; %Regularizer that suppress irrelavant cone
 p.max_iter = 100; % Stopping criteria
 p.conv_eps = 1e-3; 
