@@ -151,11 +151,8 @@ if blk_cnt==h
     if p.TransitionCheck == 1
         
         [loglik, ~, alpha, ~] = dhmm_logprob(dict_seq, p.prior, p.transmat, p.emismat);
-        
-        %                 disp(loglik);
         post_prob = p.emismat' * alpha(:,end);
         post_prob_e = kron(post_prob(1:p.R_Dict,:), ones(p.R_c,1));
-%         post_prob_d = kron(post_prob(p.R_Dict+1,:), ones(R_d,1));
         transit_weight = mk_stochastic([post_prob_e]);
         
         if mean(p.init_w(:,1:p.R_x) * A(1:p.R_x,:)) <= mean(p.init_w(:,p.R_x+1:end) * A(p.R_x+1:end, :)) * 0.1
@@ -228,12 +225,6 @@ if blk_cnt==h
         Dm_sep = Dm_hat_sum;
     end
     
-% %     %Smooth with previous supervector
-% %     if splice > 0
-% %         Xm_sep(1:end - nf_unit) = 0.5 * (Xm_sep(1:end - nf_unit) + Xm_sep_1d(nf_unit + 1 : end));
-% %         Dm_sep(1:end - nf_unit) = 0.5 * (Dm_sep(1:end - nf_unit) + Dm_sep_1d(nf_unit + 1 : end)); 
-% %     end
-    
     %% Calculate Block Sparsity
     if p.blk_sparse
         [Q, r_blk]= blk_sparse(Xm_sep, Dm_sep, r_blk, l, p);
@@ -278,7 +269,6 @@ if blk_cnt==h
     end
     Xm_tilde = G.* Y_sep;
     feat = Xm_tilde;
-    feat = loglik;
     
     if strcmp(p.B_sep_mode, 'Mel')
         if p.MelOut
