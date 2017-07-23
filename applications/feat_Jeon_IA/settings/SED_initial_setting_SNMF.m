@@ -70,6 +70,7 @@ p.SC_pow = 2;
 %% HMM-Based time transition Check from the past N frames (17, K. M. Jeon)
 p.TransitionCheck = 1;
 p.Dict_Buff = 100; 
+p.TC_pow = 2;
 
 %% Block sparsity options (Block Sparsity Measure for ODL, DSP 17, K. M. Jeon)
 p.blk_sparse = 0; %block sparsity switch

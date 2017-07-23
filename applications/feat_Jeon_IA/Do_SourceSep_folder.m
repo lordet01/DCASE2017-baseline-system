@@ -9,7 +9,7 @@
 
 tic;
 in_path = './wav_sample/32bit/baby';
-out_path = [in_path,'/proc_0724'];
+out_path = [in_path,'/proc_0724_HMM'];
 mkdir(out_path);
 
 

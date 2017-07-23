@@ -165,7 +165,7 @@ if blk_cnt==h
         end
         dict_seq = [dict_seq(2:end), dict_seq_now];
         
-        A(1:R_x, :) = A(1:R_x, :) .* transit_weight.* (loglik).^2;
+        A(1:R_x, :) = A(1:R_x, :) .* transit_weight.* abs(loglik) .^ p.TC_pow;
     end
     
     if l <= p.init_N_len
@@ -278,6 +278,7 @@ if blk_cnt==h
     end
     Xm_tilde = G.* Y_sep;
     feat = Xm_tilde;
+    feat = loglik;
     
     if strcmp(p.B_sep_mode, 'Mel')
         if p.MelOut
