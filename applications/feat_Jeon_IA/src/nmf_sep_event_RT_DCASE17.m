@@ -102,7 +102,8 @@ if blk_cnt==h
     elseif strcmp(p.B_sep_mode, 'DFT')
         Y_sep = Ym;
     end
-    
+
+if p.ProcBypass == 0
     %% 1) Perform SNMF separation
     if p.basis_update_N
         p.w_update_ind = [false(R_x + R_d - p.R_semi,1); true(p.R_semi,1)]; % Semi-supervised:
@@ -268,7 +269,7 @@ if blk_cnt==h
         G = min(G, 1);
     end
     Xm_tilde = G.* Y_sep;
-    feat = Xm_tilde;
+    feat = A;
     
     if strcmp(p.B_sep_mode, 'Mel')
         if p.MelOut
@@ -286,7 +287,11 @@ if blk_cnt==h
     else
         Xm_tilde_out = G.* Ym;
     end
-    
+else
+    feat = Y_sep;
+    Xm_tilde_out = Ym;
+end
+
     %% --------block-wise inverse STFT-------------
     for i = 1:p.NOISE_NUM
         tmp_Dm_hat = shiftdim(Dm_hat(i,splice_ext,:));
@@ -331,7 +336,7 @@ if blk_cnt==h
     end
     x_tilde = x_tilde * p.overlapscale;
     
-    
+if p.ProcBypass == 0    
     %% 4) Adaptive basis training using enhanced spectrums
     Q_control = (1-mean(Q)) * p.Ar_up;
     %       disp(Q_control);
@@ -413,6 +418,7 @@ if blk_cnt==h
             g.update_switch = g.update_switch + 1;
         end
     end
+end
     
 %     %Smooth with previous supervector
 %     if splice > 0

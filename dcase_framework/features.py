@@ -793,7 +793,8 @@ class FeatureExtractor(object):
                 # Extract features
                 extractor_func = getattr(self, '_{}'.format(extractor_name), None)
                 if extractor_func is not None:
-                    data = extractor_func(data=data, params=current_extractor_params, audio_file=audio_file)
+                    #data = extractor_func(data=data, params=current_extractor_params, audio_file=audio_file)
+                    data = extractor_func(data=data, params=current_extractor_params)
 
                     # Feature extraction meta information
                     meta = {

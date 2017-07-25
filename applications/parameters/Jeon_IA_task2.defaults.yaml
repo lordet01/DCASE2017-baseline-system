@@ -1,8 +1,8 @@
-active_set: dcase2017
+active_set: dcase2017_IA_Jeon_DNN
 
 sets:
   - set_id: dcase2017
-    description: DCASE2017 baseline (CPU) using DCASE2017 task 2 development dataset
+    description: DCASE2017 IA_Jeon's setting for task2 (DNN)
 
     feature_stacker:
       stacking_recipe: feat_MATLAB
@@ -99,12 +99,259 @@ sets:
 
       event_post_processing:
         enable: false
-
-  - set_id: dcase2017_gpu
-    description: DCASE2017 baseline (GPU) using DCASE2017 task 2 development dataset
+        
+sets:
+  - set_id: dcase2017_IA_Jeon_CNN
+    description: DCASE2017 IA_Jeon's setting for task2 (CNN)
 
     feature_stacker:
-      stacking_recipe: feat_MATLAB
+      stacking_recipe: mel
+
+    feature_aggregator:
+      enable: false
+
+    learner:
+      method: keras_seq
+      file_hop: 2
+
+    learner_method_parameters:
+      keras_seq:
+        seed: 5
+        keras:
+          backend: theano
+          backend_parameters:
+            floatX: float32
+            device: gpu
+            fastmath: true
+            optimizer: fast_run
+            openmp: true
+            threads: 4
+            CNR: true
+
+        input_sequencer:
+          enable: true
+          frames: 1400
+          hop: 1400
+          padding: false
+
+        temporal_shifter:
+          enable: true
+          border: roll
+          step: 10
+          max: 100
+
+        generator:
+          enable: true
+          method: feature
+          max_q_size: 1
+          workers: 1
+          parameters:
+            buffer_size: 100
+
+        validation:
+          enable: true
+          setup_source: generated_event_file_balanced
+          validation_amount: 0.10
+          seed: 5
+
+        training:
+          epochs: 200
+          batch_size: 1
+          shuffle: true
+
+          epoch_processing:
+            enable: true
+            external_metrics:
+              enable: true
+              evaluation_interval: 1
+              metrics:
+                - label: evtER
+                  evaluator: sed_eval.event_based
+                  name: overall.error_rate.error_rate
+                  parameters:
+                    evaluate_onset: true
+                    evaluate_offset: false
+                    t_collar: 0.5
+                    percentage_of_length: 0.5
+
+                - label: evtF1
+                  evaluator: sed_eval.event_based
+                  name: overall.f_measure.f_measure
+                  parameters:
+                    evaluate_onset: true
+                    evaluate_offset: false
+                    t_collar: 0.5
+                    percentage_of_length: 0.5
+
+          callbacks:
+#            - type: Plotter
+#              parameters:
+#                interactive: true
+#                save: true
+#                output_format: pdf
+#                focus_span: 10
+#                plotting_rate: 5
+
+            - type: Stopper
+              parameters:
+                monitor: evtER
+                initial_delay: 100
+                min_delta: 0
+                patience: 10
+
+            - type: Stasher
+              parameters:
+                monitor: evtER
+                initial_delay: 20
+
+        model:
+          constants:
+            CONVOLUTION_FILTER: 8
+            CONVOLUTION_INIT: he_normal
+            CONVOLUTION_BORDER_MODE: same
+            CONVOLUTION_TIME: 5
+            CONVOLUTION_FREQ: 5
+            CONVOLUTION_ACTIVATION: relu
+            CONVOLUTION_POOL_TIME: 1
+            CONVOLUTION_DROPOUT: 0.25
+
+          config:
+            # CONV 1
+            - class_name: Conv2D
+              config:
+                input_shape:
+                  - 1
+                  - INPUT_SEQUENCE_LENGTH
+                  - FEATURE_VECTOR_LENGTH
+
+                filters: CONVOLUTION_FILTER
+                kernel_size:
+                  - CONVOLUTION_TIME
+                  - CONVOLUTION_FREQ
+                padding: CONVOLUTION_BORDER_MODE
+                kernel_initializer: CONVOLUTION_INIT
+                data_format: channels_first
+            - class_name: BatchNormalization
+              config:
+                axis: 1
+            - class_name: Activation
+              config:
+                activation: CONVOLUTION_ACTIVATION
+            - class_name: Dropout
+              config:
+                rate: CONVOLUTION_DROPOUT
+            - class_name: MaxPooling2D
+              config:
+                data_format: channels_first
+                pool_size:
+                  - CONVOLUTION_POOL_TIME
+                  - 5
+
+            # CONV 2
+            - class_name: Conv2D
+              config:
+                filters: CONVOLUTION_FILTER
+                kernel_size:
+                  - CONVOLUTION_TIME
+                  - CONVOLUTION_FREQ
+                padding: CONVOLUTION_BORDER_MODE
+                kernel_initializer: CONVOLUTION_INIT
+                data_format: channels_first
+            - class_name: BatchNormalization
+              config:
+                axis: 1
+            - class_name: Activation
+              config:
+                activation: CONVOLUTION_ACTIVATION
+            - class_name: Dropout
+              config:
+                rate: CONVOLUTION_DROPOUT
+            - class_name: MaxPooling2D
+              config:
+                data_format: channels_first
+                pool_size:
+                  - CONVOLUTION_POOL_TIME
+                  - 4
+
+            # CONV 3
+            - class_name: Conv2D
+              config:
+                filters: CONVOLUTION_FILTER
+                kernel_size:
+                  - CONVOLUTION_TIME
+                  - CONVOLUTION_FREQ
+                padding: CONVOLUTION_BORDER_MODE
+                kernel_initializer: CONVOLUTION_INIT
+                data_format: channels_first
+            - class_name: BatchNormalization
+              config:
+                axis: 1
+            - class_name: Activation
+              config:
+                activation: CONVOLUTION_ACTIVATION
+            - class_name: Dropout
+              config:
+                rate: CONVOLUTION_DROPOUT
+            - class_name: MaxPooling2D
+              config:
+                data_format: channels_first
+                pool_size:
+                  - CONVOLUTION_POOL_TIME
+                  - 2
+
+            # Permute
+            - class_name: Permute
+              config:
+                dims:
+                  - 2
+                  - 1
+                  - 3
+
+            # Reshape
+            - class_name: Reshape
+              config:
+                target_shape:
+                  - INPUT_SEQUENCE_LENGTH
+                  - CONVOLUTION_FILTER
+
+            # OUTPUT
+            - class_name: Dense
+              wrapper: TimeDistributed
+              config:
+                units: CLASS_COUNT
+                activation: sigmoid
+                kernel_initializer: he_normal
+
+          loss: binary_crossentropy
+
+          optimizer:
+            type: Adam
+
+          metrics:
+            - binary_accuracy
+
+    recognizer:
+      frame_accumulation:
+        enable: false
+
+      frame_binarization:
+        enable: true
+        threshold: 0.5
+
+      event_activity_processing:
+        enable: false
+
+      event_post_processing:
+        enable: true
+        minimum_event_length_seconds: 0.1         # seconds
+        minimum_event_gap_second: 0.1             # seconds    
+        
+
+  - set_id: dcase2017_IA_Jeon_DNN
+    description: DCASE2017 IA_Jeon's setting for task2 (DNN)
+
+    feature_stacker:
+      stacking_recipe: mel
 
     feature_aggregator:
       enable: true
@@ -184,7 +431,9 @@ sets:
 
     recognizer:
       frame_accumulation:
-        enable: false
+        enable: true
+        type: sliding_sum
+        window_length_seconds: 0.5
 
       frame_binarization:
         enable: true

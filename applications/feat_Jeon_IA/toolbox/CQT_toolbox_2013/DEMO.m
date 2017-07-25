@@ -2,12 +2,12 @@
 %% PARAMETERS
 fs = 44100;
 fmin = 27.5;
-B = 48;
-gamma = 20; 
+B = 20;
+gamma = 30; 
 fmax = fs/2;
 
 %% INPUT SIGNAL
-x = wavread('brent2.wav');
+x = wavread('mixture_devtest_gunshot_492_b549f585888faf1672438c394b039d1b.wav');
 x = x(:); xlen = length(x);
 
 %% COMPUTE COEFFIENTS

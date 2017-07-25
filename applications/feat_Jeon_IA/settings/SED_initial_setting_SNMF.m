@@ -9,6 +9,7 @@ p.ForceRewrite = 0; %Forcely rewrite output file
 p.ForceRetrain = 0; %Forcely retrain bases
 p.ForceRetrain_MLD = 0; %Forcely retrain bases only for MLD
 p.ForceRetrain_HMM = 0;
+p.ProcBypass = 0;
 
 % BNMF block
 p.blk_len_sep=1;
@@ -68,8 +69,8 @@ p.SC_RatioH = 0.95;
 p.SC_pow = 2;
 
 %% HMM-Based time transition Check from the past N frames (17, K. M. Jeon)
-p.TransitionCheck = 1;
-p.Dict_Buff = 100; 
+p.TransitionCheck = 0;
+p.Dict_Buff = 20; 
 p.TC_pow = 1;
 
 %% Block sparsity options (Block Sparsity Measure for ODL, DSP 17, K. M. Jeon)
@@ -117,7 +118,7 @@ p.filegap = p.ch; %No. of file consisting one session
 
 %Training options 
 p.separation = 1;
-p.B_sep_mode = 'Mel'; %['DFT', 'Mel']
+p.B_sep_mode = 'DFT'; %['DFT', 'Mel']
 p.MelConv = 1; %Use frequency scale conversion. 00: Coupled dictionary
 p.MelOut = 0; %Use Mel spectrum at synthesizing wavform
 p.train_VAD = 0;
@@ -147,7 +148,6 @@ p.alpha_d = 0.95; % Recursive averaging parameter for the noise
 p.G_floor = 0.006;
 p.G_beta = 1.0; %Bias compensation factor in the noise estimator
 p.G_beta_max = 1000.0;
-
 
 %Phase compensation options
 p.phase_comp = 0;
