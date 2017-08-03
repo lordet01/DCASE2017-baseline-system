@@ -37,14 +37,18 @@ end
 load(['basis_HMM/bgn_DCASE2017/bgn_DCASE2017_Basis.mat']);
 B_DFT_d = B_DFT_sub; B_Mel_d = B_Mel_sub;
 
+
+SED_initial_setting_SNMF;
+
 %% Structured Noise Basis Organization {ODL, BGN, NonTarget Event}
-B_DFT_d = [B_DFT_d, B_DFT_x_buff]; B_Mel_d = [B_Mel_d, B_Mel_x_buff]; %Consider non-target event as noises
+if p.Structure_Basis == 1
+    B_DFT_d = [B_DFT_d, B_DFT_x_buff]; B_Mel_d = [B_Mel_d, B_Mel_x_buff]; %Consider non-target event as noises
+end
 if p.adapt_train_N == 1
     B_DFT_d = [B_DFT_d(:, 1:p.R_a), B_DFT_d]; %Reserve Noise adaptation field
     B_Mel_d = [B_Mel_d(:, 1:p.R_a), B_Mel_d]; %Reserve Noise adaptation field
 end
 
-SED_initial_setting_SNMF;
 
 %% Add HMM Parameters to global buffer
 if p.TransitionCheck == 1
@@ -196,7 +200,7 @@ while (1)
     %Store Activation trajectory
     if A_traj == 0
         A_traj = A_frm;
-    else
+    elseif A_frm ~= 0
         A_traj = [A_traj, A_frm];
     end
     

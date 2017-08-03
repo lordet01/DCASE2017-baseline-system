@@ -6,10 +6,10 @@
 %    - Kwang Myung Jeon
 % ***********************************************/
 
-
+clc; clear; warning off;
 tic;
-in_path = './wav_sample/32bit/gunshot';
-out_path = [in_path,'/proc_DFT_SC'];
+in_path = './wav_sample/32bit';
+out_path = [in_path,'/proc_Mel_Dict_HMM_ONDL'];
 mkdir(out_path);
 
 
@@ -18,17 +18,17 @@ EVENT_LIST = {'babycry', 'glassbreak', 'gunshot'};
 for i=1:length(file_list)
     K = strfind(file_list(i).name, 'babycry');
     if K >= 1
-        filewise_SourceSep([in_path,'/',file_list(i).name], [out_path,'/',file_list(i).name], EVENT_LIST, 'babycry');
+        filewise_SourceSep_Dict([in_path,'/',file_list(i).name], [out_path,'/',file_list(i).name], EVENT_LIST, 'babycry');
     end
     
     K = strfind(file_list(i).name, 'glassbreak');
     if K >= 1
-        filewise_SourceSep([in_path,'/',file_list(i).name], [out_path,'/',file_list(i).name], EVENT_LIST, 'glassbreak');
+        filewise_SourceSep_Dict([in_path,'/',file_list(i).name], [out_path,'/',file_list(i).name], EVENT_LIST, 'glassbreak');
     end
     
     K = strfind(file_list(i).name, 'gunshot');
     if K >= 1
-        filewise_SourceSep([in_path,'/',file_list(i).name], [out_path,'/',file_list(i).name], EVENT_LIST, 'gunshot');
+        filewise_SourceSep_Dict([in_path,'/',file_list(i).name], [out_path,'/',file_list(i).name], EVENT_LIST, 'gunshot');
     end
 end
 toc;

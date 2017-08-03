@@ -33,8 +33,9 @@ end
 DC_freq_set = [80 80 80];
 VAD_set = [0 0 0];
 [B_x_DFT, B_x_Mel, ~, ~, p] = run_basis_train(dir_Basis, DB_path_list, DC_freq_set, ...
-                                           VAD_set, EVENT_NUM, B_class_event_full, p.R_x, p);
-   
+                            VAD_set, EVENT_NUM, B_class_event_full, p.R_x, p);
+
+                        
 %% Train background noise bases
 DB_path_list = cell(1,1);
 B_class_event_full = cell(1,1);

@@ -1,4 +1,4 @@
-function [x_hat_i,d_hat_i, x_tilde, feat, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
+function [x_hat_i,d_hat_i, x_tilde_i, feat, g] = nmf_sep_event_RT_DCASE17(y, l, g, p)
 
 %% Global buffer initialize
 Ym = g.Ym;
@@ -130,7 +130,6 @@ if p.ProcBypass == 0
     end
     
     p.h_update_ind = true(r,1);
-    p.h_weight = 1;
     
     %% Check Sparsity between Input and Basis
     if p.SparseCheck == 1
@@ -141,30 +140,38 @@ if p.ProcBypass == 0
         SC_BandH = floor(p.SC_RatioH * n_tmp);
         [Q_Y]= blk_sparse_single(Y_sep_t(SC_BandL:SC_BandH, :), p);
         [Q_B]= blk_sparse_single(B_t(SC_BandL:SC_BandH, :), p);
-        Q_H = 1 - abs(Q_B' - Q_Y);
-        simil_scale = Q_H .^ p.SC_pow;
-        p.h_weight = simil_scale;
-    end
         
+        Q_H = zeros(r, m);
+        for t = 1:m
+            Q_H(:,t) = 1 - abs(Q_B' - Q_Y(t));
+        end
+        simil_scale = Q_H .^ p.SC_pow;
+        if exist('p.h_weight', 'var')
+            p.h_weight = p.h_weight .* simil_scale;
+        else
+            p.h_weight = simil_scale;
+        end
+    end
+    
+    %Sparse NMF-based Source Separation
     [~, A] = sparse_nmf(Y_sep, p);
     
     %% Gives time-transition constraint to activation
+    p.h_weight = ones(R_x+R_d,1);
     if p.TransitionCheck == 1
-        
-        [loglik, ~, alpha, ~] = dhmm_logprob(dict_seq, p.prior, p.transmat, p.emismat);
+        [~, ~, alpha, ~] = dhmm_logprob(dict_seq, p.prior, p.transmat, p.emismat);
         post_prob = p.emismat' * alpha(:,end);
         post_prob_e = kron(post_prob(1:p.R_Dict,:), ones(p.R_c,1));
         transit_weight = mk_stochastic([post_prob_e]);
+        p.h_weight(1:R_x) = p.h_weight(1:R_x) .* transit_weight;       
         
         if mean(p.init_w(:,1:p.R_x) * A(1:p.R_x,:)) <= mean(p.init_w(:,p.R_x+1:end) * A(p.R_x+1:end, :)) * 0.1
             dict_seq_now = p.R_Dict + 1; %Set Silence observation
         else
-            [~, dict_seq_now] = max(A(1:p.R_x,:)); dict_seq_now = round(dict_seq_now * 0.5);
+            [~, dict_seq_now] = max(A(1:p.R_x,:)); dict_seq_now = ceil(dict_seq_now ./ p.R_c);
         end
         dict_seq = [dict_seq(2:end), dict_seq_now];
-        
-        A(1:R_x, :) = A(1:R_x, :) .* transit_weight.* abs(loglik) .^ p.TC_pow;
-    end
+    end    
     
     if l <= p.init_N_len
         A(1:R_x, :) = zeros(R_x, m) + eps;
@@ -255,13 +262,13 @@ if p.ProcBypass == 0
         %         beta = p.G_beta;
         
         lambda_dav=p.alpha_d.*lambda_dav+(1-p.alpha_d).*Dm_sep * beta;
-        lambda_d=lambda_dav;  % new version
+        lambda_d=max(lambda_dav, p.nonzerofloor);  % new version
         
         if strcmp(p.ENHANCE_METHOD, 'Wiener')
-            G = Xm_sep ./ (Xm_sep + Dm_sep * p.G_beta);
+            G = Xm_sep ./ (Xm_sep + lambda_d * p.G_beta);
         elseif strcmp(p.ENHANCE_METHOD, 'MMSE')
             eta = (p.alpha_eta * Xm_tilde + ...
-                (1-p.alpha_eta) * Xm_sep .* Q) ./ max(lambda_d, p.nonzerofloor);
+                (1-p.alpha_eta) * Xm_sep .* Q) ./ lambda_d;
             
             eta = max(p.G_floor, eta);
             G =  eta ./ (eta+ones(size(eta)));
@@ -270,6 +277,7 @@ if p.ProcBypass == 0
     end
     Xm_tilde = G.* Y_sep;
     feat = A;
+%     feat = transit_weight;
     
     if strcmp(p.B_sep_mode, 'Mel')
         if p.MelOut
@@ -338,7 +346,7 @@ end
     
 if p.ProcBypass == 0    
     %% 4) Adaptive basis training using enhanced spectrums
-    Q_control = (1-mean(Q)) * p.Ar_up;
+    Q_control = (1-mean(Q(:,m))) * p.Ar_up;
     %       disp(Q_control);
     if p.adapt_train_N && (( Q_control*A_d_mag > A_x_mag) || l <= p.init_N_len)
         
@@ -356,17 +364,17 @@ if p.ProcBypass == 0
         
         %Estimate smoothed noise PSD
         lambda_Gy = D_ref;
-        lambda_d_blk = [lambda_d_blk(:,2:p.m_a) lambda_Gy];
+        lambda_d_blk = [lambda_d_blk(:,m+1:p.m_a*m) lambda_Gy];
         %         plot(lambda_d_blk);
         %         contour(lambda_d_blk);
-        Ad_blk = [Ad_blk(:,2:p.m_a) A(R_x+1:R_x+p.R_a,:)];
+        Ad_blk = [Ad_blk(:,m+1:p.m_a*m) A(R_x+1:R_x+p.R_a,:)];
         
         
         r_up = Q_control * mean(Ad_blk,2) > A_x_mag;
         r_up_inv = 1 - r_up;
         %           disp(sum(r_up));
         
-        Ad_blk_up = Ad_blk .* repmat(r_up, [1 p.m_a]);
+        Ad_blk_up = Ad_blk .* repmat(r_up, [1 p.m_a*m]);
         Ad_blk_up = Ad_blk_up(any(Ad_blk_up,2),:); %Exclude all-zero rows
         if g.update_switch == floor(p.overlap_m_a * p.m_a)
             
@@ -426,23 +434,22 @@ end
 %         Dm_sep_1d = Dm_sep;
 %     end
     blk_cnt = 0;
+else
+    feat = 0;
 end
+blk_cnt = blk_cnt+1;
 
 %% ----------frame signal writing------------
-blk_cnt = blk_cnt+1;
-x_hat = x_hat(:,:,blk_cnt);
-d_hat = d_hat(:,:,blk_cnt);
 
 %Make 2D to 3D matrix for compatibility with NTF functions
-tmp = ones(size(x_hat,1),1,size(x_hat,2));
-tmp(:,1,:) = x_hat;
+tmp = ones(size(x_hat(:,:,blk_cnt),1),1,size(x_hat(:,:,blk_cnt),2));
+tmp(:,1,:) = x_hat(:,:,blk_cnt);
 x_hat_i = tmp;
 
-tmp_d = ones(1,size(d_hat,1),size(d_hat,2));
-tmp_d(:,1,:) = d_hat;
+tmp_d = ones(1,size(d_hat(:,:,blk_cnt),1),size(d_hat(:,:,blk_cnt),2));
+tmp_d(:,1,:) = d_hat(:,:,blk_cnt);
 d_hat_i = tmp_d;
-x_tilde = x_tilde(:,blk_cnt);
-x_tilde = x_tilde';
+x_tilde_i = x_tilde(:,blk_cnt)';
 
 %% Global buffer update
 g.Ym = Ym;

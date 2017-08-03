@@ -114,7 +114,7 @@ for l = 1:event_num
                 %Feature2: Mel Magnitude
                 m = size(TF_mag,2);
                 n = p.fftlength/2 + 1;
-                melmat = mel_matrix(p.fs, p.F_order, p.fftlength, 1, p.fs/2)'; %Get Mel Matrix
+                melmat = mel_matrix(p.fs, p.F_order, p.fftlength, 1, p.fhigh)'; %Get Mel Matrix
                 TF_Mel = zeros(p.F_order*(p.Splice * 2 + 1),m);
                 for k = 1 : p.Splice * 2 + 1
                     TF_Mel(1+(k-1)*p.F_order : k*p.F_order, :) = ...
@@ -130,6 +130,7 @@ for l = 1:event_num
                     else
                         p.r = R;
                     end
+                    p.h_weight = 1; %Don;t Use in Initial Training
                     [B_DFT_init, A_DFT_init] = sparse_nmf(TF_mag, p);
                     if batch_cnt > 0
                         A_DFT_tot = [A_DFT_tot, A_DFT_init];
@@ -148,6 +149,7 @@ for l = 1:event_num
                     else
                         A_Mel_tot = A_Mel_init;
                     end
+                    
                 else
                     rng('default'); rng(1);
                     sample_idx =  randsample(size(TF_mag,2),p.cluster_buff*R);
@@ -161,6 +163,11 @@ for l = 1:event_num
                 s_full = zeros(p.train_seq_len_max,1);
                 s_len_cnt = 0;
                 
+                %% Clear event-wise buffer
+                try
+                    p = rmfield(p, {'w_update_ind', 'h_update_ind', 'init_w', 'init_h'});
+                catch
+                end
             end
         end
         clear('s_full');
@@ -184,12 +191,6 @@ for l = 1:event_num
         load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_Activation.mat']);
 
         p = p_org; 
-    end
-    
-   %% Clear event-wise buffer
-    try
-        p = rmfield(p, {'w_update_ind', 'h_update_ind', 'init_w', 'init_h'});
-    catch
     end
     
     if p.train_MLD == 1
@@ -265,6 +266,12 @@ for l = 1:event_num
                 else
                     A_Mel_tot = A_Mel_MLD;
                 end
+                
+                %% Clear event-wise buffer
+                try
+                    p = rmfield(p, {'w_update_ind', 'h_update_ind', 'init_w', 'init_h'});
+                catch
+                end
             end
             
             % Basis Normalization
@@ -287,21 +294,31 @@ for l = 1:event_num
             p = p_org;
         end
     end
-    
+
+    %% Learn GMM-HMM from dictionary activations
     if p.train_HMM_NMF
-        fexist = fopen([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat']);
-        if fexist == -1 || p.ForceRetrain_MLD
-            disp(['------',num2str(l),'-th event train (HMM)------']);
-            [~, dict_seq] = max(A_Mel_sub); dict_seq = round(dict_seq * 0.5);
-            idx_sil = mean(B_Mel_sub * A_Mel_sub) <= 0.00001 .* mean(mean(B_Mel_sub * A_Mel_sub));
-            dict_seq(idx_sil) = p.R_Dict + 1; %Set Silence observation
-            [prior, transmat, emismat] = init_HMM(dict_seq, p.Q, p.R_Dict + 1);
-            
-             save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat'],'prior', 'transmat', 'emismat', '-v7.3');
-        else
-             load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat']);
+        A_dict_seq = zeros(p.R_Dict, size(A_Mel_sub,2));
+        for g = 1:p.R_Dict
+            A_dict_seq(g,:) = sum(A_Mel_sub((g-1)*p.R_c+1:g*p.R_c,:));
         end
-    end
+        fexist = fopen([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat']);
+        if fexist == -1 || p.ForceRetrain_HMM
+            disp(['------',num2str(l),'-th event train (HMM)------']);
+            [p_start, A, phi, ~] = train_mHMM(A_dict_seq, p.Q, p.M, p.LearnDur, p.SampleForTrain, p);
+            
+            save([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat'],'p_start', 'A', 'phi', '-v7.3');
+        else
+            load([dir_Basis,'/',B_name_full{l},'/', B_name_full{l},'_HMM.mat']);
+        end
+    end    
+    
+    test_mHMM(A_dict_seq, p.LearnDur, p_start, A, phi, p)
+end
+
+%Clear garbage buffers regarding NMF train
+try
+    p = rmfield(p, {'w_update_ind', 'h_update_ind', 'init_w', 'init_h'});
+catch
 end
 
 p_out = p;
